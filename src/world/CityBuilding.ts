@@ -707,6 +707,37 @@ function roofShell(
     out.quad(corner(b, -1, 1), corner(b, -1, -1), corner(a, -1, -1), corner(a, -1, 1), band);
   }
 
+  // 垂脊 — the hip ridges running from the ends of the main ridge down to the
+  // four eave corners. In a photograph of any hall in the compound these four
+  // diagonals are the strongest lines on the roof after the ridge itself: they
+  // are what stops a hipped roof reading as a tent. Built as a raised ribbon
+  // following the corner of each ring, which costs four narrow quads a band.
+  if (form !== 'pyramid' && hw > 2.5) {
+    const ridgeW = clamp(height * 0.09, 0.14, 0.5);
+    const lift = 0.06;
+    for (const sx of [-1, 1]) {
+      for (const sz of [-1, 1]) {
+        for (let i = 1; i < rings.length - 1; i++) {
+          const a = rings[i]!;
+          const b = rings[i + 1]!;
+          const outerA = corner(a, sx, sz);
+          const outerB = corner(b, sx, sz);
+          const innerA = new Vector3(
+            outerA.x - sx * ridgeW, outerA.y + lift, outerA.z - sz * ridgeW,
+          );
+          const innerB = new Vector3(
+            outerB.x - sx * ridgeW, outerB.y + lift, outerB.z - sz * ridgeW,
+          );
+          outerA.y += lift;
+          outerB.y += lift;
+          // Wound so the ribbon faces up whichever corner it is on.
+          if (sx * sz > 0) out.quad(outerA, outerB, innerB, innerA, CITY_COLORS.ridge);
+          else out.quad(innerA, innerB, outerB, outerA, CITY_COLORS.ridge);
+        }
+      }
+    }
+  }
+
   const top = rings[rings.length - 1]!;
   if (form === 'gable') {
     // 歇山: the upper roof is a gable, its ends closed by a vertical panel that

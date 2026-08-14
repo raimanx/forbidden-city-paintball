@@ -20,11 +20,13 @@ import { Backdrop } from './Backdrop';
 import { CITY_COLORS, buildStructure, type BoxCollider } from './CityBuilding';
 import { CityProps } from './CityProps';
 import {
+  GOLDEN_RIVER,
   GROUND_HALF_X,
   GROUND_HALF_Z,
   IMPERIAL_WAY,
   INTERIOR,
   MOAT,
+  RIVER_BRIDGES,
   TERRACE,
   WALL,
   heightAt,
@@ -230,6 +232,7 @@ export class CityArenaSystem implements System {
     this.buildWall(targetFor('wall'), colliders, colliderDistrict);
     this.buildTerrace(targetFor('terrace'), colliders, colliderDistrict);
     this.buildImperialWay(targetFor('way'));
+    this.buildRiverBridges(targetFor('bridge'), colliders, colliderDistrict);
     this.buildContainment(colliders, colliderDistrict);
 
     // One mesh per district per material.
@@ -485,6 +488,48 @@ export class CityArenaSystem implements System {
         hd: horizontal ? 1 : edgeZ + 2,
       });
       keys.push('containment');
+    }
+  }
+
+  /**
+   * The five bridges over the Inner Golden Water River.
+   *
+   * The layout already parts the water for them — `riverMask` leaves the paving
+   * unbroken where a bridge crosses — so what is missing is the thing that makes
+   * a crossing read as a bridge rather than as a gap in a ditch: a marble deck a
+   * hand above the paving, and a balustrade down both sides. The middle one is
+   * the imperial bridge and is the widest of the five.
+   */
+  private buildRiverBridges(out: District, colliders: BoxCollider[], keys: string[]): void {
+    const railHeight = 0.9;
+    for (const bridge of RIVER_BRIDGES) {
+      const centerZ = GOLDEN_RIVER.centerZ
+        + GOLDEN_RIVER.bow * Math.pow(Math.min(Math.abs(bridge.x) / GOLDEN_RIVER.halfSpan, 1), 2);
+      const halfDepth = GOLDEN_RIVER.halfDepth + planLength(6);
+
+      // The deck, standing a little proud of the courtyard either side.
+      out.stone.box(bridge.x, 0.14, centerZ, bridge.halfWidth, 0.14, halfDepth,
+        CITY_COLORS.marble);
+      colliders.push({
+        cx: bridge.x, cy: 0.14, cz: centerZ,
+        hw: bridge.halfWidth, hh: 0.14, hd: halfDepth,
+      });
+      keys.push('bridge');
+
+      // A balustrade down both sides: kerb, posts, rail — the same three pieces
+      // the terrace uses, at the same human size.
+      for (const side of [-1, 1]) {
+        const x = bridge.x + side * (bridge.halfWidth - 0.12);
+        out.stone.box(x, 0.42, centerZ, 0.14, 0.28, halfDepth, CITY_COLORS.marble);
+        out.stone.box(x, railHeight, centerZ, 0.16, 0.1, halfDepth, CITY_COLORS.marble);
+        for (let z = centerZ - halfDepth; z <= centerZ + halfDepth; z += 1.8) {
+          out.stone.box(x, 0.7, z, 0.12, 0.24, 0.12, CITY_COLORS.marbleShade);
+        }
+        colliders.push({
+          cx: x, cy: 0.5, cz: centerZ, hw: 0.18, hh: 0.5, hd: halfDepth,
+        });
+        keys.push('bridge');
+      }
     }
   }
 
