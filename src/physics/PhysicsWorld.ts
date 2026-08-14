@@ -169,6 +169,28 @@ export class PhysicsWorld {
   }
 
   /**
+   * Many static convex hulls on one rigid body — the city's roofs.
+   *
+   * A roof is the largest thing on any building here and, until this existed,
+   * the only part of one a paintball flew straight through: the eave overhangs
+   * by up to 2.4m, so a box around it is an invisible ceiling out over the
+   * courtyard, and nobody wants to bump their head on a hall they are walking
+   * past. A hull of the roof's own corners is the actual shape — sloped,
+   * narrowing to the ridge, and stopping at the eave — for one collider.
+   *
+   * Points come in as a flat `[x, y, z, …]` array. A hull that Rapier refuses to
+   * build — degenerate, coplanar — is skipped rather than throwing, and its slot
+   * comes back `null` so the caller can still line results up with its input.
+   */
+  createStaticHulls(hulls: readonly Float32Array[]): Array<RapierNS.Collider | null> {
+    const body = this.w.createRigidBody(this.api.RigidBodyDesc.fixed());
+    return hulls.map((points) => {
+      const desc = this.api.ColliderDesc.convexHull(points);
+      return desc ? this.w.createCollider(desc, body) : null;
+    });
+  }
+
+  /**
    * Static upright cylinder, centred on `position`.
    *
    * Used for tree trunks. A trimesh of the branch geometry would be exact, but

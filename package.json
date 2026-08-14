@@ -12,7 +12,7 @@
     "test:movement": "node tools/movement-test.mjs",
     "test:ballistics": "node tools/ballistics-test.mjs",
     "test:paint": "node tools/paint-test.mjs",
-    "test": "node tools/movement-test.mjs && node tools/ballistics-test.mjs && node tools/paint-test.mjs && node tools/geometry-test.mjs && node tools/arena-test.mjs && node tools/character-test.mjs && node tools/bot-test.mjs && node tools/ui-test.mjs && node tools/crosshair-test.mjs && node tools/match-test.mjs && node tools/touch-test.mjs",
+    "test": "node tools/movement-test.mjs && node tools/ballistics-test.mjs && node tools/paint-test.mjs && node tools/geometry-test.mjs && node tools/structure-test.mjs && node tools/arena-test.mjs && node tools/character-test.mjs && node tools/bot-test.mjs && node tools/ui-test.mjs && node tools/crosshair-test.mjs && node tools/match-test.mjs && node tools/touch-test.mjs",
     "test:arena": "node tools/arena-test.mjs",
     "test:character": "node tools/character-test.mjs",
     "test:bots": "node tools/bot-test.mjs",
@@ -26,7 +26,8 @@
     "encode": "node tools/encode.mjs",
     "perf": "node tools/perf.mjs",
     "perf:attribute": "node tools/perf-attribute.mjs",
-    "test:geometry": "node tools/geometry-test.mjs"
+    "test:geometry": "node tools/geometry-test.mjs",
+    "test:structures": "node tools/structure-test.mjs"
   },
   "devDependencies": {
     "@types/three": "^0.185.4",

@@ -76,3 +76,24 @@ Two things that want a human rather than a machine:
   Palaces are entered through gates the survey does not carry, so the navgrid
   prunes them. Every alley and every major court is reachable; the private
   courtyards inside them are not.
+
+# Iteration 6 — the compound as a solid
+
+The five items in `CLAUDE/FEEDBACK_5.md` are done. Nothing floats, no building
+stands inside another, nothing can be walked into, every surface a paintball can
+reach takes paint, and there is a paintball course in the courtyards:
+containers you can stand inside and shoot out of, scaffold towers with a deck,
+barricades, crate stacks and drums.
+
+The gates were most of it. A gate gets no plinth, and its piers were being
+started at the plinth line anyway — so all 35 of them hung 0.9m above their own
+courtyards, and a player could walk *under* the Meridian Gate anywhere along its
+frontage instead of through its arches.
+
+`npm run test:structures` is new: it loads the world modules through Vite and
+checks all 783 structures for exactly these faults in about four seconds, with
+no browser. Plan in `CLAUDE/PLAN_6.md`, consequences in `CLAUDE/NEXT_6.md`.
+
+Note for anyone re-running `tools/fetch-osm.mjs`: `src/world/CityPlan.ts` was
+regenerated this iteration and the survey had moved since the last pull. Run the
+structure suite straight afterwards.

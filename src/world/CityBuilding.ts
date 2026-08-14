@@ -1,15 +1,15 @@
 import { Color, Vector3 } from 'three';
 import { clamp, lerp } from '../core/MathUtils';
 import type { MeshBuilder } from './MeshBuilder';
-import type { RoofForm, Structure } from './CityPlan';
-import { SCALE, WALL, planLength, planX, planZ } from './CityLayout';
+import { STRUCTURES, type RoofForm, type Structure } from './CityPlan';
+import { SCALE, WALL, onTheGreatTerrace, planLength, planX, planZ } from './CityLayout';
 
 /**
  * One building, generated from its footprint.
  *
  * ## Why this is code and not a model
  *
- * There are 798 structures inside the walls and no two footprints are the same.
+ * There are 783 structures inside the walls and no two footprints are the same.
  * A Blender kit placed by instancing would have to stretch a hip roof from 6m to
  * 190m wide, and a stretched hip roof is instantly wrong: the pitch flattens,
  * the eave curve smears, and the tile courses turn to stripes of different
@@ -72,6 +72,9 @@ export const CITY_COLORS = {
   lattice: new Color(0xc9a469),
 } as const;
 
+/** Which merged mesh a piece of the city is drawn into. */
+export type Surface = 'roof' | 'timber' | 'stone';
+
 /** An axis-aligned box collider, in world space. */
 export interface BoxCollider {
   cx: number;
@@ -80,6 +83,76 @@ export interface BoxCollider {
   hw: number;
   hh: number;
   hd: number;
+  /**
+   * The material this box was drawn in, where it is known.
+   *
+   * Carried so paint can be projected against the mesh that actually holds the
+   * triangles it hit. Geometry is merged by material, so a plinth's collider
+   * registered against the timber mesh finds no stone under the impact and the
+   * splat is dropped — which was every plinth, coping and stone base in the
+   * compound.
+   */
+  surface?: Surface;
+}
+
+/** A footprint in world space — what a structure occupies on the ground. */
+export interface Footprint {
+  cx: number;
+  cz: number;
+  hw: number;
+  hd: number;
+}
+
+/**
+ * What else stands nearby, so a structure can be built against its neighbours
+ * rather than through them.
+ *
+ * The survey is a set of independent outlines and says nothing about how they
+ * meet. Two things need to know:
+ *
+ * - **Courtyard walls** run *between* buildings in the real compound — a range
+ *   closes the side of a court and the wall stops at its gable. Built from the
+ *   outline alone, 265 wall runs pass straight through a building, and each one
+ *   is a red wall growing out of a red wall halfway up its own roof.
+ * - **Platforms** are the stone bases a group of halls stands on. A hall
+ *   levelled onto the terrain instead of onto its base has its plinth buried in
+ *   the slab it is meant to be standing on.
+ */
+export interface Surroundings {
+  /** Buildings a courtyard wall has to stop at. */
+  solids: readonly Footprint[];
+  /** Stone platforms, with the height of the surface they present. */
+  platforms: readonly (Footprint & { top: number })[];
+}
+
+/**
+ * Reads the whole plan once and works out what stands where.
+ *
+ * Exported because the arena and `tools/structure-test.mjs` have to agree about
+ * it exactly: a test that built the city from a different set of neighbours
+ * would be checking a city nobody plays.
+ */
+export function surroundings(groundAt: (x: number, z: number) => number): Surroundings {
+  const solids: Footprint[] = [];
+  const platforms: Array<Footprint & { top: number }> = [];
+
+  for (const s of STRUCTURES) {
+    const cx = planX(s.x);
+    const cz = planZ(s.z);
+    const hw = planLength(s.w) / 2;
+    const hd = planLength(s.d) / 2;
+    if (s.kind === 'courtwall') continue;
+    if (s.kind === 'platform') {
+      // The survey's tracings of the great terrace are not built — the terrace
+      // is terrain — so nothing stands on them either.
+      if (onTheGreatTerrace(cx, cz)) continue;
+      platforms.push({ cx, cz, hw, hd, top: platformTop(cx, cz, hw, hd, s.height * SCALE, groundAt) });
+      continue;
+    }
+    solids.push({ cx, cz, hw, hd });
+  }
+
+  return { solids, platforms };
 }
 
 /** Where a building's geometry goes, split by the material it is drawn with. */
@@ -90,6 +163,15 @@ export interface BuildTarget {
   timber: MeshBuilder;
   /** Stone and marble: plinths, terraces, paving, balustrades. */
   stone: MeshBuilder;
+  /**
+   * Convex hulls for the roofs, as flat `[x, y, z, …]` corner lists.
+   *
+   * Roofs cannot be colliders in the same breath as the rest of a building: a
+   * box round one is an invisible ceiling hanging two metres out over the
+   * courtyard. So they are collected here and built as hulls of their own real
+   * shape — see `PhysicsWorld.createStaticHulls`.
+   */
+  hulls: Float32Array[];
 }
 
 /** How much of a building's height is roof, by what the building is. */
@@ -122,6 +204,7 @@ export function buildStructure(
   s: Structure,
   groundAt: (x: number, z: number) => number,
   out: BuildTarget,
+  around: Surroundings,
 ): BoxCollider[] {
   const cx = planX(s.x);
   const cz = planZ(s.z);
@@ -130,7 +213,7 @@ export function buildStructure(
   const height = s.height * SCALE;
 
   if (s.kind === 'courtwall') {
-    return buildCourtWall(cx, cz, hw, hd, groundAt, out);
+    return buildCourtWall(cx, cz, hw, hd, groundAt, out, around);
   }
   if (s.kind === 'platform') {
     return buildPlatform(cx, cz, hw, hd, height, groundAt, out);
@@ -138,18 +221,20 @@ export function buildStructure(
 
   // Level onto the highest ground under the footprint; the plinth reaches down
   // to the lowest.
-  const corners = [
-    groundAt(cx, cz),
-    groundAt(cx - hw, cz - hd), groundAt(cx + hw, cz - hd),
-    groundAt(cx - hw, cz + hd), groundAt(cx + hw, cz + hd),
-  ];
+  //
+  // Sampled over a grid rather than at the four corners, which is what this used
+  // to do. A footprint that straddles the terrace skirt has its extremes in the
+  // middle of an edge as often as at a corner, and a corner-only sample put the
+  // Gate of the Rear Left 4.5m in the air over the ramp it stands on.
+  const ground = groundRange(cx, cz, hw, hd, groundAt);
   // The corner towers stand *on* the wall at its four corners, not beside it,
   // so they are levelled onto the wall's head rather than onto the ground the
-  // wall stands on. Everything else takes the highest ground under its own
-  // footprint.
+  // wall stands on. A building on a stone platform stands on the platform.
+  // Everything else takes the highest ground under its own footprint.
   const onWall = s.kind === 'tower' && s.roof === 'triple';
-  const top = onWall ? WALL.height : Math.max(...corners);
-  const bottom = Math.min(...corners);
+  const platform = highestPlatformUnder(around, cx, cz, hw, hd);
+  const top = onWall ? WALL.height : Math.max(ground.top, platform ?? -Infinity);
+  const bottom = platform ?? ground.bottom;
 
   const grand = s.kind === 'hall' || s.kind === 'gate' || s.kind === 'tower';
   // Plinths are human-scale furniture, not part of the mass, so they are sized
@@ -185,13 +270,20 @@ export function buildStructure(
   // round it and no way through becomes a box with the player inside it. The
   // archways are what make the plan a route rather than a picture.
   const gateColliders = s.kind === 'gate'
-    ? buildGateBody(s, cx, cz, bodyHw, bodyHd, baseY, bodyHeight, out)
+    ? buildGateBody(s, cx, cz, bodyHw, bodyHd, baseY, bodyHeight, bottom, out)
     : null;
   if (!gateColliders) {
     buildBody(s, cx, cz, bodyHw, bodyHd, baseY, bodyHeight, out);
   }
 
   const eaveY = baseY + bodyHeight;
+  // Head height over the ground this building stands on: no roof collider
+  // reaches below it. See roofShell.
+  //
+  // A player who climbs onto a building's own plinth can still bump the eave of
+  // a low gallery, which is what would happen to them in Beijing. What this
+  // line rules out is an invisible ceiling over ground anyone walks on.
+  const hullFloor = bottom + 1.95;
   if (s.roof === 'triple') {
     // The corner towers, and nothing else on the map. Three tiers of eaves,
     // each storey set inside the one below, which is the shape everybody has
@@ -201,8 +293,8 @@ export function buildStructure(
     let tierHd = hd;
     for (let tier = 0; tier < 3; tier++) {
       const tierRoofH = roofHeight * (tier === 2 ? 0.9 : 0.5);
-      roofShell(out.roof, cx, cz, tierHw, tierHd, y, tierRoofH, 'hip', roofColor(s),
-        tierHw * 0.8, tierHd * 0.8);
+      roofShell(out, cx, cz, tierHw, tierHd, y, tierRoofH, 'hip', roofColor(s),
+        hullFloor, tierHw * 0.8, tierHd * 0.8);
       if (tier === 2) break;
       const nextHw = tierHw * 0.76;
       const nextHd = tierHd * 0.76;
@@ -227,8 +319,8 @@ export function buildStructure(
     // deeper inset the entire lower roof sits in that shadow and reads as a
     // brown apron rather than as gold.
     const lowerRoofH = roofHeight * 0.62;
-    roofShell(out.roof, cx, cz, hw, hd, eaveY, lowerRoofH, 'hip', roofColor(s),
-      bodyHw, bodyHd);
+    roofShell(out, cx, cz, hw, hd, eaveY, lowerRoofH, 'hip', roofColor(s),
+      hullFloor, bodyHw, bodyHd);
 
     // The upper storey stands inside the lower roof's ridge line.
     const upperHw = Math.max(hw - lowerRoofH * 0.62, hw * 0.5);
@@ -237,25 +329,28 @@ export function buildStructure(
     const upperBodyH = Math.max(bodyHeight * 0.34, 1.4);
     buildBody(s, cx, cz, upperHw * 0.86, upperHd * 0.86, upperBase, upperBodyH, out);
     roofShell(
-      out.roof, cx, cz, upperHw, upperHd,
+      out, cx, cz, upperHw, upperHd,
       upperBase + upperBodyH, roofHeight * 0.8, 'hip', roofColor(s),
-      upperHw * 0.86, upperHd * 0.86,
+      hullFloor, upperHw * 0.86, upperHd * 0.86,
     );
   } else {
-    roofShell(out.roof, cx, cz, hw, hd, eaveY, roofHeight, s.roof, roofColor(s),
-      bodyHw, bodyHd);
+    roofShell(out, cx, cz, hw, hd, eaveY, roofHeight, s.roof, roofColor(s),
+      hullFloor, bodyHw, bodyHd);
   }
 
   // One collider for the plinth step, and either one for a solid body or one
-  // per pier for a pierced gate. The roof is not a collider: it overhangs by up
-  // to 2.4m, and a box around it would be an invisible ceiling you bounce paint
-  // off two metres from the wall.
+  // per pier for a pierced gate. The roof is not among them: it is a convex
+  // hull, pushed to `out.hulls` by roofShell, because a box around an eave that
+  // overhangs by 2.4m is an invisible ceiling out over the courtyard.
   //
   // A gate's plinth is left out entirely — it would be a step across the
   // archway you have to hop over to walk through your own gate.
   return gateColliders ?? [
-    { cx, cy: plinthY, cz, hw: plinthHw, hh: plinthHeight / 2, hd: plinthHd },
-    { cx, cy: baseY + bodyHeight / 2, cz, hw: bodyHw, hh: bodyHeight / 2, hd: bodyHd },
+    { cx, cy: plinthY, cz, hw: plinthHw, hh: plinthHeight / 2, hd: plinthHd, surface: 'stone' },
+    {
+      cx, cy: baseY + bodyHeight / 2, cz,
+      hw: bodyHw, hh: bodyHeight / 2, hd: bodyHd, surface: 'timber',
+    },
   ];
 }
 
@@ -426,13 +521,28 @@ function buildGateBody(
   cx: number, cz: number,
   hw: number, hd: number,
   baseY: number, height: number,
+  /** Lowest ground under the footprint: where the piers have to reach. */
+  bottom: number,
   out: BuildTarget,
 ): BoxCollider[] {
   const alongX = hw >= hd;
   const span = alongX ? hw : hd;
   const thickness = alongX ? hd : hw;
   const count = span > 13 ? 3 : 1;
-  const openHalf = Math.min(2.3, span / (count * 3.4));
+  /**
+   * Half-width of each archway.
+   *
+   * Floored as well as capped, and the floor is the important half: the navgrid
+   * works in 2m cells probed at five points, so an opening much under three
+   * metres straddles two cells and both come back blocked. Before the piers
+   * reached the ground a bot could walk under any gate anywhere along its
+   * frontage, which hid the problem; now that they do, an archway a bot cannot
+   * path through seals the courtyard behind it.
+   *
+   * The floor gives way on the smallest gates rather than eating them: at four
+   * metres wide overall, a 3.4m opening leaves two 30cm stubs holding up a roof.
+   */
+  const openHalf = clamp(span / (count * 3.4), Math.min(1.7, span * 0.5), 2.4);
   const openTop = Math.min(height * 0.78, 5.4);
 
   // Centres of the archways, spread across the span.
@@ -461,12 +571,40 @@ function buildGateBody(
     const phw = alongX ? alongHalf : thickness;
     const phd = alongX ? thickness : alongHalf;
     out.timber.box(px, y, pz, phw, halfHeight, phd, CITY_COLORS.redDeep, 0.02);
-    colliders.push({ cx: px, cy: y, cz: pz, hw: phw, hh: halfHeight, hd: phd });
+    colliders.push({ cx: px, cy: y, cz: pz, hw: phw, hh: halfHeight, hd: phd, surface: 'timber' });
   };
 
+  // The piers stand on the ground, not on the plinth line every other building
+  // is levelled onto.
+  //
+  // A gate gets no plinth — a step across the archway is something to hop over
+  // to walk through your own gate — and for five iterations that meant its piers
+  // began 0.9m up with nothing under them. Every gate on the map floated, and
+  // since the gap ran the whole width of the footprint rather than only across
+  // the arches, a player could walk *under* the Meridian Gate anywhere along its
+  // 86m frontage. The stone base course below is what a gate really stands on.
+  const baseTop = Math.min(baseY + 0.5, baseY + height * 0.2);
   for (const [a, b] of piers) {
     if (b - a < 0.2) continue;
-    place((a + b) / 2, (b - a) / 2, baseY + height / 2, height / 2);
+    const along = (a + b) / 2;
+    const alongHalf = (b - a) / 2;
+    const wallH = baseY + height - baseTop;
+    place(along, alongHalf, baseTop + wallH / 2, wallH / 2);
+    // 须弥座 — the moulded stone base, which is also what fills the gap down to
+    // the ground where the footprint straddles uneven going.
+    const px = alongX ? cx + along : cx;
+    const pz = alongX ? cz : cz + along;
+    const phw = alongX ? alongHalf : thickness;
+    const phd = alongX ? thickness : alongHalf;
+    const baseH = baseTop - bottom;
+    if (baseH > 0.05) {
+      out.stone.box(px, bottom + baseH / 2, pz, phw * 1.02, baseH / 2, phd * 1.02,
+        CITY_COLORS.stone);
+      colliders.push({
+        cx: px, cy: bottom + baseH / 2, cz: pz,
+        hw: phw * 1.02, hh: baseH / 2, hd: phd * 1.02, surface: 'stone',
+      });
+    }
   }
   // The lintel band over the archways, spanning the lot.
   const lintelH = (height - openTop) / 2;
@@ -508,12 +646,20 @@ function buildCourtWall(
   hw: number, hd: number,
   groundAt: (x: number, z: number) => number,
   out: BuildTarget,
+  around: Surroundings,
 ): BoxCollider[] {
   // Courtyard walls in the Forbidden City are about 4m — head height and then
   // some, which is what makes the compound a maze rather than a plan.
   const height = 3.6;
   const half = 0.55;
   const colliders: BoxCollider[] = [];
+
+  // Only the buildings this outline can actually reach. 146 enclosures against
+  // 600 buildings is 350,000 tests otherwise, and all but a handful of them are
+  // on the other side of the compound.
+  const near = around.solids.filter(
+    (b) => Math.abs(b.cx - cx) < hw + b.hw + 2 && Math.abs(b.cz - cz) < hd + b.hd + 2,
+  );
 
   /**
    * Half-width of the doorway cut through the middle of a long run.
@@ -528,22 +674,39 @@ function buildCourtWall(
 
   const segment = (rx: number, rz: number, rhw: number, rhd: number): void => {
     if (rhw < 0.2 || rhd < 0.2) return;
-    const y = groundAt(rx, rz);
-    out.timber.box(rx, y + height / 2, rz, rhw, height / 2, rhd, CITY_COLORS.red, 0.08);
+    // Level along its length, and down to the lowest ground under it, so a run
+    // that crosses the terrace skirt neither floats at one end nor sinks at the
+    // other.
+    const ground = groundRange(rx, rz, rhw, rhd, groundAt);
+    const top = ground.top + height;
+    const h = top - ground.bottom;
+    out.timber.box(rx, top - h / 2, rz, rhw, h / 2, rhd, CITY_COLORS.red, 0.08);
     // The tiled coping, oversailing both faces.
-    out.roof.box(rx, y + height + 0.14, rz, rhw + 0.2, 0.14, rhd + 0.2, CITY_COLORS.tile);
-    colliders.push({ cx: rx, cy: y + height / 2, cz: rz, hw: rhw, hh: height / 2, hd: rhd });
+    out.roof.box(rx, top + 0.14, rz, rhw + 0.2, 0.14, rhd + 0.2, CITY_COLORS.tile);
+    colliders.push({
+      cx: rx, cy: top - h / 2, cz: rz, hw: rhw, hh: h / 2, hd: rhd, surface: 'timber',
+    });
   };
 
   /**
-   * One side of the enclosure, with a doorway through the middle of it.
+   * One side of the enclosure: a doorway through the middle, and a gap wherever
+   * a building stands in the way.
    *
    * The doorway is not decoration. A courtyard wall traced as a closed outline
    * and built as four unbroken runs is a sealed box, and the compound has a
-   * hundred and forty-five of them: whole quarters of the Inner Court came out
+   * hundred and forty-six of them: whole quarters of the Inner Court came out
    * as pockets no one could enter, the navgrid's flood fill pruned six thousand
    * cells as unreachable, and the two bots that spawned inside the Six Palaces
    * stood in the dark for the entire round.
+   *
+   * The buildings are the other half of the same idea. In the real compound a
+   * courtyard wall runs *between* buildings and stops at the gable of each: the
+   * range closes that side of the court and the wall picks up again beyond it.
+   * The survey has no way to say so, so 265 runs were passing straight through a
+   * building — a red wall growing out of a red wall halfway up its own roof.
+   * Cutting the building's footprint out of the run is both what the place looks
+   * like and, since half of those buildings are the gate-houses of their own
+   * courtyards, several hundred more ways through the maze.
    *
    * Short runs are left solid — a 4m return with a 3.4m hole in it is not a
    * wall — which is also why this cuts every long side rather than only the
@@ -554,18 +717,43 @@ function buildCourtWall(
   const run = (rx: number, rz: number, rhw: number, rhd: number): void => {
     const alongX = rhw > rhd;
     const half = alongX ? rhw : rhd;
-    if (half < 5) {
-      segment(rx, rz, rhw, rhd);
-      return;
+    const centre = alongX ? rx : rz;
+    const across = alongX ? rhd : rhw;
+
+    // Spans of the run that survive, in metres either side of its centre.
+    let spans: Array<[number, number]> = [[-half, half]];
+    // A doorway every eighteen metres or so of run, evenly spaced. One in the
+    // middle of each side — which is what this used to cut — leaves a 60m wall
+    // you walk the length of twice, and left the flood fill pruning a quarter
+    // of the compound as unreachable, because a courtyard whose one door opens
+    // into another sealed courtyard is still sealed.
+    if (half >= 5) {
+      const doors = clamp(Math.round(half / 7), 1, 5);
+      for (let i = 0; i < doors; i++) {
+        const at = (((i + 0.5) / doors) * 2 - 1) * half;
+        spans = subtractSpan(spans, at - DOOR, at + DOOR);
+      }
     }
-    const wing = (half - DOOR) / 2;
-    for (const side of [-1, 1]) {
-      const offset = side * (DOOR + wing);
+    for (const b of near) {
+      // Only where the building actually stands in this run's line.
+      const offAxis = alongX ? Math.abs(b.cz - rz) : Math.abs(b.cx - rx);
+      if (offAxis > across + (alongX ? b.hd : b.hw)) continue;
+      const at = (alongX ? b.cx : b.cz) - centre;
+      const reach = (alongX ? b.hw : b.hd) + 0.3;
+      spans = subtractSpan(spans, at - reach, at + reach);
+    }
+
+    for (const [a, b] of spans) {
+      // Anything shorter than this is a stub between two buildings that stand
+      // nearly shoulder to shoulder, and it reads as a lump rather than a wall.
+      if (b - a < 1.2) continue;
+      const mid = (a + b) / 2;
+      const length = (b - a) / 2;
       segment(
-        alongX ? rx + offset : rx,
-        alongX ? rz : rz + offset,
-        alongX ? wing : rhw,
-        alongX ? rhd : wing,
+        alongX ? rx + mid : rx,
+        alongX ? rz : rz + mid,
+        alongX ? length : rhw,
+        alongX ? rhd : length,
       );
     }
   };
@@ -592,13 +780,79 @@ function buildPlatform(
   groundAt: (x: number, z: number) => number,
   out: BuildTarget,
 ): BoxCollider[] {
-  const y = groundAt(cx, cz);
-  const h = Math.max(height, 0.6);
-  out.stone.box(cx, y + h / 2, cz, hw, h / 2, hd, CITY_COLORS.stone, 0.04);
+  // Level top, base to the lowest ground under it. Taking the height at the
+  // centre — which is what this used to do — left the two platforms that reach
+  // onto the terrace skirt standing 3.7m clear of the courtyard on their low
+  // side.
+  const ground = groundRange(cx, cz, hw, hd, groundAt);
+  const top = platformTop(cx, cz, hw, hd, height, groundAt);
+  const h = top - ground.bottom;
+  out.stone.box(cx, top - h / 2, cz, hw, h / 2, hd, CITY_COLORS.stone, 0.04);
   // A pale coping course along the top edge, so the platform has a lip rather
   // than fading into the paving it stands on.
-  out.stone.box(cx, y + h + 0.08, cz, hw + 0.12, 0.08, hd + 0.12, CITY_COLORS.marbleShade);
-  return [{ cx, cy: y + h / 2, cz, hw, hh: h / 2, hd }];
+  out.stone.box(cx, top + 0.08, cz, hw + 0.12, 0.08, hd + 0.12, CITY_COLORS.marbleShade);
+  return [{ cx, cy: top - h / 2, cz, hw, hh: h / 2, hd, surface: 'stone' }];
+}
+
+/** The surface a platform presents: level, and clear of the highest ground. */
+function platformTop(
+  cx: number, cz: number, hw: number, hd: number, height: number,
+  groundAt: (x: number, z: number) => number,
+): number {
+  return groundRange(cx, cz, hw, hd, groundAt).top + Math.max(height, 0.6);
+}
+
+/** Cuts `[from, to]` out of a set of spans, keeping them sorted and disjoint. */
+function subtractSpan(
+  spans: Array<[number, number]>, from: number, to: number,
+): Array<[number, number]> {
+  const out: Array<[number, number]> = [];
+  for (const [a, b] of spans) {
+    if (to <= a || from >= b) { out.push([a, b]); continue; }
+    if (from > a) out.push([a, from]);
+    if (to < b) out.push([to, b]);
+  }
+  return out;
+}
+
+/** The lowest and highest ground under a footprint, sampled on a grid. */
+function groundRange(
+  cx: number, cz: number, hw: number, hd: number,
+  groundAt: (x: number, z: number) => number,
+): { top: number; bottom: number } {
+  let top = -Infinity;
+  let bottom = Infinity;
+  for (let a = -1; a <= 1; a += 0.5) {
+    for (let b = -1; b <= 1; b += 0.5) {
+      const y = groundAt(cx + a * hw * 0.99, cz + b * hd * 0.99);
+      if (y > top) top = y;
+      if (y < bottom) bottom = y;
+    }
+  }
+  return { top, bottom };
+}
+
+/**
+ * The surface of the platform a building stands on, if it stands on one.
+ *
+ * "Stands on" is most of its footprint rather than all of it: the survey traces
+ * eaves, and a hall's eaves oversail the edge of its own base by a metre or two
+ * at every corner. Demanding containment left the Palace of Heavenly Purity
+ * levelled onto the courtyard with its plinth inside the platform it is built
+ * on. The highest wins, because the Inner Court's bases are stacked.
+ */
+function highestPlatformUnder(
+  around: Surroundings, cx: number, cz: number, hw: number, hd: number,
+): number | undefined {
+  let best: number | undefined;
+  const area = 4 * hw * hd;
+  for (const p of around.platforms) {
+    const ox = Math.min(cx + hw, p.cx + p.hw) - Math.max(cx - hw, p.cx - p.hw);
+    const oz = Math.min(cz + hd, p.cz + p.hd) - Math.max(cz - hd, p.cz - p.hd);
+    if (ox <= 0 || oz <= 0 || (ox * oz) / area < 0.85) continue;
+    if (best === undefined || p.top > best) best = p.top;
+  }
+  return best;
 }
 
 /**
@@ -616,16 +870,29 @@ function buildPlatform(
  *   a band of shadow between its red wall and its gold roof.
  */
 function roofShell(
-  out: MeshBuilder,
+  target: BuildTarget,
   cx: number, cz: number,
   hw: number, hd: number,
   eaveY: number, height: number,
   form: RoofForm,
   color: Color,
+  /**
+   * The lowest a roof's collider may reach — head height over whatever the
+   * building stands on.
+   *
+   * A roof is a collider so that paint sticks to it, and it is a *hull* rather
+   * than a box so that the collider is the roof's own sloped shape instead of a
+   * lid out over the courtyard. That still leaves the eave itself, which on a
+   * low gallery hangs about 2.1m up: a player who steps onto the plinth under
+   * one would walk their head into it. So the hull is cut off below this line,
+   * and a roof entirely below it gets none.
+   */
+  hullFloor: number,
   /** Half-extents of the wall below, so the soffit is a frame and not a lid. */
   innerHw = hw * 0.72,
   innerHd = hd * 0.72,
 ): void {
+  const out = target.roof;
   const RINGS = 4;
   // Where the ridge sits, as a fraction of the footprint.
   const ridgeHw = form === 'pyramid'
@@ -655,6 +922,33 @@ function roofShell(
 
   const corner = (r: { halfW: number; halfD: number; y: number }, sx: number, sz: number) =>
     new Vector3(cx + sx * r.halfW, r.y, cz + sz * r.halfD);
+
+  // The collider: one hull per band of the roof, from the eave up.
+  //
+  // Per band rather than one hull for the whole roof, because the profile is
+  // *concave* — shallow at the eave, steep at the ridge, which is what stops a
+  // Chinese roof reading as a barn — and the convex hull of a dished curve cuts
+  // the corner. It came out as much as a metre inside the tiles, so a ball
+  // stopped in mid-air short of the roof and the splat, projected at the impact,
+  // found no roof within reach and was dropped. A band between two rings is a
+  // frustum, which is convex, so its hull is the surface exactly.
+  //
+  // The lip band — the first, which tilts down and out — is left off: it is the
+  // underside of the eave rather than the roof.
+  for (let i = 1; i < rings.length - 1; i++) {
+    const lower = rings[i]!;
+    const upper = rings[i + 1]!;
+    if (lower.y < hullFloor) continue;
+    const points: number[] = [];
+    for (const r of [lower, upper]) {
+      for (const sx of [-1, 1]) {
+        for (const sz of [-1, 1]) {
+          points.push(cx + sx * r.halfW, r.y, cz + sz * r.halfD);
+        }
+      }
+    }
+    target.hulls.push(new Float32Array(points));
+  }
 
   const shade = new Color().copy(color).multiplyScalar(0.82);
 

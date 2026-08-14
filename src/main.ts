@@ -132,8 +132,9 @@ const aim = new AimSolver();
 // Registration order is execution order, and it matters:
 //   player writes renderPosition -> camera reads it and writes avatarOpacity
 //   -> avatar reads both.
+const cityArena = new CityArenaSystem(surfaces);
 game
-  .add(useTestCourse ? new TestCourseSystem(surfaces) : new CityArenaSystem(surfaces))
+  .add(useTestCourse ? new TestCourseSystem(surfaces) : cityArena)
   .add(player)
   .add(new CameraRig(playerState))
   .add(ballistics)
@@ -201,6 +202,14 @@ declare global {
        * — it just makes the whole compound a shade too dark.
        */
       MeshBuilder: typeof MeshBuilder;
+      /**
+       * Where the paintball course was set up, for `tools/arena-test.mjs`.
+       *
+       * The pieces are dealt into the courtyards from the seeded rng rather
+       * than authored, so a test that wants to walk into a container has no
+       * other way to find one.
+       */
+      course: () => ReadonlyArray<{ kind: string; x: number; z: number; alongX: boolean }>;
     };
   }
 }
@@ -242,6 +251,7 @@ window.__paintball = {
   bootTimings: () => game.bootTimings,
   impacts,
   MeshBuilder,
+  course: () => cityArena.course,
 };
 
 game.events.on('load:progress', ({ phase, progress }) => {

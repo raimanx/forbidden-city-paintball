@@ -3,7 +3,7 @@ import { BufferAttribute, BufferGeometry, Color, Vector3 } from 'three';
 /**
  * A growable triangle soup in world space.
  *
- * The city is 798 buildings. Instancing them is not on — every footprint is a
+ * The city is 783 structures. Instancing them is not on — every footprint is a
  * different size, and a hip roof scaled to fit would have its pitch and its eave
  * curve stretched with it — so geometry is generated per building and merged.
  * This is what it merges into: plain arrays that grow, and one `finish()` at the

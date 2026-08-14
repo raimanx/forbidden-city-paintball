@@ -37,7 +37,7 @@ interface Node {
  * analytic heightfield, so sampling it into cells is exact and costs nothing,
  * and a proper navmesh would buy nothing at this scale. Obstacles are found by
  * querying the physics world at each cell, which means every collider the arena
- * places — all 798 buildings, the courtyard walls, the terrace facing — blocks
+ * places — all 783 structures, the courtyard walls, the terrace facing — blocks
  * bots automatically, with no separate obstacle list to keep in sync. On a map
  * that is four fifths building by area, that property is doing most of the work.
  *

@@ -22,19 +22,35 @@ export interface PaintReceiver {
  * and the paint system looks up receivers on impact.
  */
 export class SurfaceRegistry {
-  private byHandle = new Map<number, PaintReceiver>();
+  private byHandle = new Map<number, PaintReceiver[]>();
 
   register(colliderHandle: number, receiver: PaintReceiver): void {
-    this.byHandle.set(colliderHandle, receiver);
+    this.byHandle.set(colliderHandle, [receiver]);
+  }
+
+  /**
+   * Registers a collider against several candidate surfaces, best first.
+   *
+   * The city's geometry is merged by *material* — tile, timber, stone — and one
+   * collider often stands behind more than one of them: the perimeter wall is a
+   * stone base course with a red wall on it and a tiled coping over that, and
+   * all three are different meshes. Paint projects against triangles, so a
+   * splat on the base course of a wall registered as timber finds nothing near
+   * the impact and is silently dropped. Handing over every mesh the collider
+   * could have been drawn by, in the order it most likely was, is what makes
+   * every face of a building take paint rather than most of them.
+   */
+  registerAll(colliderHandle: number, receivers: PaintReceiver[]): void {
+    if (receivers.length > 0) this.byHandle.set(colliderHandle, receivers);
   }
 
   /** Convenience for an ordinary mesh. Its world matrix is resolved now. */
   registerMesh(colliderHandle: number, mesh: Mesh): void {
     mesh.updateMatrixWorld(true);
-    this.byHandle.set(colliderHandle, {
+    this.byHandle.set(colliderHandle, [{
       geometry: mesh.geometry,
       matrixWorld: mesh.matrixWorld.clone(),
-    });
+    }]);
   }
 
   /** Registers one instance of an instanced prop. */
@@ -43,13 +59,14 @@ export class SurfaceRegistry {
     geometry: BufferGeometry,
     instanceMatrix: Matrix4,
   ): void {
-    this.byHandle.set(colliderHandle, {
+    this.byHandle.set(colliderHandle, [{
       geometry,
       matrixWorld: instanceMatrix.clone(),
-    });
+    }]);
   }
 
-  get(colliderHandle: number): PaintReceiver | undefined {
+  /** Every surface this collider might have been drawn by, best first. */
+  get(colliderHandle: number): readonly PaintReceiver[] | undefined {
     return this.byHandle.get(colliderHandle);
   }
 

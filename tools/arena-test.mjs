@@ -199,6 +199,42 @@ for (const [name, x, z, yaw] of [
 check('the moat contains the player on all four sides', escapes.length === 0,
       escapes.length ? escapes.join('; ') : 'no escapes');
 
+// --- The paintball course --------------------------------------------------
+// The containers and scaffold towers trucked into the courtyards are the only
+// cover on ninety metres of ceremonial brick, and the container is the one
+// structure on the map with an inside. Both promises are worth checking by
+// walking, because both are one arithmetic slip from a solid block: a doorway
+// narrower than the player, or a stair whose first step is 1.35m.
+const course = await page.evaluate(() => window.__paintball.course());
+check('the course is set up in the courtyards', course.length >= 20,
+      `${course.length} pieces`);
+
+const container = course.find((piece) => piece.kind === 'container');
+if (container) {
+  // In through the door, which is at the far end from where this starts.
+  // The door is at the far end of the long axis, so the approach is from
+  // outside it walking back along that axis: yaw 0 is north, +PI/2 is west.
+  const doorSide = container.alongX ? [container.x + 6, container.z] : [container.x, container.z + 6];
+  const yaw = container.alongX ? Math.PI / 2 : 0;
+  const inside = await walkFrom(doorSide[0], doorSide[1], yaw, 3.5);
+  const dx = Math.abs(inside.x - container.x);
+  const dz = Math.abs(inside.z - container.z);
+  check('a player can get inside a container',
+        inside.grounded && dx < (container.alongX ? 3.0 : 1.2)
+        && dz < (container.alongX ? 1.2 : 3.0),
+        `ended at (${inside.x.toFixed(1)}, ${inside.z.toFixed(1)}) ` +
+        `against (${container.x.toFixed(1)}, ${container.z.toFixed(1)})`);
+}
+
+const tower = course.find((piece) => piece.kind === 'tower');
+if (tower) {
+  // Up the pallet stair, which climbs from the south.
+  const onTop = await walkFrom(tower.x, tower.z + 6.2, 0, 7.0);
+  check('the scaffold tower can be climbed',
+        onTop.grounded && onTop.y > 1.5,
+        `reached y=${onTop.y.toFixed(2)} at z=${onTop.z.toFixed(1)}`);
+}
+
 // --- Paint sticks to the compound ------------------------------------------
 // Fired at the Gate of Supreme Harmony from the great court, which is one of
 // the merged district meshes rather than a prop — the case that would break if
@@ -217,6 +253,55 @@ await waitSim(1.6);
 const afterPaint = await page.evaluate(() => window.__paintball.paint.splatCount);
 check('paint sticks to arena geometry', afterPaint > beforePaint,
       `${beforePaint} -> ${afterPaint} splats`);
+
+// --- and it sticks to every surface, not most of them ----------------------
+// The compound's geometry is merged by material — tile, timber, stone — and its
+// colliders do not line up one-to-one with those meshes: a wall is a stone base
+// with a red body and a tiled coping, and a hall is a stone plinth under a
+// timber wall under a tiled roof. When a collider was registered against a
+// single mesh, a hit anywhere on the other two found no triangles to project
+// onto and the splat was quietly dropped, which looks exactly like a paintball
+// that missed.
+//
+// So this fires in every direction from four places and asks a blunt question:
+// did everything that hit the world leave a mark? Position-independent on
+// purpose — it does not matter which surface is in front of the muzzle, only
+// that whatever is takes paint.
+await page.evaluate(() => { window.__paintball.impacts.length = 0; });
+const before = await page.evaluate(() => ({
+  placed: window.__paintball.paint.placedCount,
+  impacts: window.__paintball.impacts.length,
+}));
+for (const [x, z] of [[0, 120], [-4, 40], [60, -100], [0, 196]]) {
+  for (const yaw of [0, Math.PI / 2, Math.PI, -Math.PI / 2]) {
+    for (const pitch of [0.55, 0.15, -0.1]) {
+      await page.evaluate(({ x, z, yaw, pitch }) => {
+        const { player, state } = window.__paintball;
+        state.yaw = yaw;
+        state.pitch = pitch;
+        player.teleport(new (state.position.constructor)(x, 2.2, z));
+      }, { x, z, yaw, pitch });
+      await waitSim(0.5);
+      await page.mouse.down();
+      await waitSim(0.12);
+      await page.mouse.up();
+      await waitSim(1.2);
+    }
+  }
+}
+const after = await page.evaluate(() => ({
+  placed: window.__paintball.paint.placedCount,
+  impacts: window.__paintball.impacts.length,
+  high: window.__paintball.impacts.filter((i) => i.y > 5).length,
+}));
+const hits = after.impacts - before.impacts;
+const painted = after.placed - before.placed;
+check('every surface the ball hits takes paint',
+      hits > 20 && painted >= hits * 0.95,
+      `${painted}/${hits} hits painted, ${after.high} of them above 5m`);
+// Firing up at 30 degrees from inside a courtyard is firing at roofs, and a
+// roof that no ball ever reaches is a roof with no collider.
+check('paintballs hit the roofs', after.high > 0, `${after.high} hits above 5m`);
 
 check('no console or page errors', consoleErrors.length === 0, consoleErrors[0] ?? 'clean');
 

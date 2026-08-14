@@ -34,7 +34,7 @@ import { clamp, lerp, smoothstep } from '../core/MathUtils';
  * ## Three rings
  *
  * - **The compound**, inside the wall. Courtyard brick, the terraces, and the
- *   798 structures of `CityPlan`. Everything the fight happens in.
+ *   783 structures of `CityPlan`. Everything the fight happens in.
  * - **The moat ring**, wall to far bank. A road, the water, and the outer
  *   embankment. Walkable at the corners and along the road; the water is not.
  * - **Beyond**, backdrop only: Jingshan on the axis to the north, and the grey
@@ -468,6 +468,22 @@ function featuresX(): number[] {
 /** True where the ground is the flat courtyard the compound is paved with. */
 export function isCourtyard(x: number, z: number): boolean {
   return outsideWall(x, z) < -WALL.thickness / 2;
+}
+
+/**
+ * True for a point on the great terrace, its aprons included.
+ *
+ * Generous on purpose. The survey traces the terrace as two big unnamed
+ * platform polygons that run a little past the terrace's own bounds, and the
+ * arena has to drop those on the floor: the terrace is *terrain* here, and
+ * building the survey's slabs as well lays a second platform 0.7m above the
+ * first, overhanging the stairs by thirteen metres — invisible from the
+ * courtyard, and a dead stop halfway up your own staircase.
+ */
+export function onTheGreatTerrace(x: number, z: number): boolean {
+  const centerZ = (TERRACE.northZ + TERRACE.southZ) / 2;
+  const halfZ = (TERRACE.southZ - TERRACE.northZ) / 2 + planLength(30);
+  return Math.abs(x) < TERRACE.halfX + planLength(20) && Math.abs(z - centerZ) < halfZ;
 }
 
 /** Edges the ground mesh has to resolve, north-south. */

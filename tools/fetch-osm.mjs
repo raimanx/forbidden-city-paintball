@@ -104,7 +104,11 @@ function classify(tags, w, d) {
 
   if (tags.barrier === 'city_wall' || tags.historic === 'citywalls') return 'citywall';
   if (tags.natural === 'water' || tags.waterway) return 'water';
-  if (tags.barrier === 'wall' || tags.building === 'wall' || /^(院墙|城墙|侧墙|左侧墙|右侧墙)/.test(zh)) {
+  // Anything with 墙 anywhere in its name is a wall, not a building. Anchoring
+  // this to the start of the name — which is what it used to do — let 四合院墙1
+  // through as a `range`, and a 62m square courtyard wall built as a range is a
+  // solid red block with the Hall of Heroic Splendour inside it.
+  if (tags.barrier === 'wall' || tags.building === 'wall' || zh.includes('墙')) {
     return 'courtwall';
   }
   if (tags.historic === 'city_gate' || /Gate$/.test(en) || last === '门') return 'gate';
@@ -169,6 +173,195 @@ function heightOf(kind, area, zh) {
     case 'range': return 8.5;
     default: return 7;
   }
+}
+
+/**
+ * Which structure wins when two footprints want the same ground.
+ *
+ * `courtwall` and `platform` are not in the table and take no part: a courtyard
+ * wall is an *outline* rather than a solid, and a platform is the thing halls
+ * stand on, so both are meant to overlap their neighbours.
+ */
+const RANK = { gate: 6, hall: 5, tower: 5, kiosk: 4, range: 3, gallery: 2 };
+
+/** Overlap of two footprints along each axis, in metres. Negative when apart. */
+function overlapOf(a, b) {
+  return {
+    x: Math.min(a.x + a.w / 2, b.x + b.w / 2) - Math.max(a.x - a.w / 2, b.x - b.w / 2),
+    z: Math.min(a.z + a.d / 2, b.z + b.d / 2) - Math.max(a.z - a.d / 2, b.z - b.d / 2),
+  };
+}
+
+/** Grows `a` to take in `b`. */
+function union(a, b) {
+  const minX = Math.min(a.x - a.w / 2, b.x - b.w / 2);
+  const maxX = Math.max(a.x + a.w / 2, b.x + b.w / 2);
+  const minZ = Math.min(a.z - a.d / 2, b.z - b.d / 2);
+  const maxZ = Math.max(a.z + a.d / 2, b.z + b.d / 2);
+  a.x = (minX + maxX) / 2;
+  a.z = (minZ + maxZ) / 2;
+  a.w = maxX - minX;
+  a.d = maxZ - minZ;
+}
+
+/** True when `inner`'s centre falls inside `outer`'s rectangle. */
+function containsCentre(outer, inner) {
+  return Math.abs(inner.x - outer.x) < outer.w / 2 && Math.abs(inner.z - outer.z) < outer.d / 2;
+}
+
+/**
+ * Makes the survey's footprints stop standing inside each other.
+ *
+ * OSM traces what a surveyor sees from above: eaves, courtyard outlines, and the
+ * occasional garden drawn as one big way. Read literally that is 489 pairs of
+ * structures sharing ground, and since every footprint here becomes a solid
+ * with a collider round it, each of those is a building growing out of another
+ * building. Three rules, in order:
+ *
+ * 1. **Enclosures.** A footprint with two or more other structures standing
+ *    inside it is not a building — it is the wall around them. 御花园, the
+ *    Imperial Garden, is traced as a single 139m by 96m way, and built as a
+ *    range it is a red block with the Hall of Imperial Peace and both of the
+ *    garden's pavilions buried in it.
+ * 2. **Duplicates.** Where one footprint covers most of another, the survey has
+ *    the same building twice — once as its hall and once as its compound. The
+ *    ranked and named one stays.
+ * 3. **Trims.** What is left is eaves overlapping by a metre or two. The lesser
+ *    building gives way along whichever axis it is losing by less, which keeps
+ *    the plan's geometry and only costs the loser its overhang.
+ */
+function declash(all) {
+  const solid = (s) => RANK[s.kind] !== undefined;
+  const areaOf = (s) => s.w * s.d;
+
+  // 1 — enclosures. Only the unranked kinds are eligible: the Meridian Gate is
+  // a U 191m across with the whole forecourt and its five pavilions inside it,
+  // and by this rule alone it would be demoted to a courtyard wall — the one
+  // building on the map nobody would forgive.
+  let enclosures = 0;
+  for (const s of all) {
+    if (s.kind !== 'range' && s.kind !== 'gallery') continue;
+    if (areaOf(s) < 1500) continue;
+    const inside = all.filter((o) => o !== s && solid(o) && containsCentre(s, o)).length;
+    if (inside < 2) continue;
+    s.kind = 'courtwall';
+    s.roof = 'none';
+    s.height = 3.4;
+    enclosures++;
+  }
+
+  // 2 — the stone bases. Two tracings of one base become one, and every base is
+  // then grown to take in the buildings standing on it.
+  //
+  // Growing them is what stops a hall being both raised onto its base and
+  // buried in it. The Palace of Heavenly Purity is 68% inside the base under it
+  // — the survey traces eaves, and its eaves oversail the stonework — so on any
+  // containment test it stands in the courtyard with its plinth inside the
+  // platform. A base that reaches to the eave line of what it carries is both
+  // truer to the place and unambiguous to build against.
+  let platforms = all.filter((s) => s.kind === 'platform');
+  for (let pass = 0; pass < 4; pass++) {
+    let merged = false;
+    for (const a of platforms) {
+      for (const b of platforms) {
+        if (a === b || a.w === 0 || b.w === 0) continue;
+        const o = overlapOf(a, b);
+        if (o.x <= 0 || o.z <= 0) continue;
+        if ((o.x * o.z) / Math.min(areaOf(a), areaOf(b)) < 0.5) continue;
+        union(a, b);
+        b.w = 0;
+        merged = true;
+      }
+    }
+    platforms = platforms.filter((p) => p.w > 0);
+    if (!merged) break;
+  }
+  for (const p of platforms) {
+    for (const s of all) {
+      if (!solid(s)) continue;
+      const o = overlapOf(p, s);
+      if (o.x <= 0 || o.z <= 0) continue;
+      if ((o.x * o.z) / areaOf(s) < 0.6) continue;
+      union(p, s);
+    }
+  }
+
+  // 3 — duplicates. Largest first, so a compound swallows its own halls rather
+  // than the other way about.
+  const kept = [];
+  const dropped = [];
+  for (const s of [...all].sort((a, b) => areaOf(b) - areaOf(a))) {
+    // Platforms are compared with platforms and buildings with buildings: a
+    // hall standing on its base is not the survey saying the same thing twice,
+    // but the Inner Court's base traced once at 95m and again at 92m is.
+    const twinnable = (k) => (s.kind === 'platform' ? k.kind === 'platform' : solid(k));
+    if (!solid(s) && s.kind !== 'platform') { kept.push(s); continue; }
+    const twin = kept.find((k) => {
+      if (!twinnable(k)) return false;
+      const o = overlapOf(k, s);
+      if (o.x <= 0 || o.z <= 0) return false;
+      return (o.x * o.z) / Math.min(areaOf(k), areaOf(s)) > 0.7;
+    });
+    if (!twin) { kept.push(s); continue; }
+
+    // The better-documented of the two survives, whichever way round they came.
+    // Two platforms have no rank between them, so the larger one — which came
+    // first — keeps the ground.
+    const better = ((RANK[s.kind] ?? 0) - (RANK[twin.kind] ?? 0))
+      || ((s.zh ? 1 : 0) - (twin.zh ? 1 : 0));
+    if (better > 0) {
+      kept[kept.indexOf(twin)] = s;
+      dropped.push(twin);
+    } else {
+      dropped.push(s);
+    }
+  }
+
+  // 4 — trims. A few passes, because giving way to one neighbour can walk a
+  // footprint into the next.
+  const CLEAR = 0.5;
+  let trimmed = 0;
+  for (let pass = 0; pass < 6; pass++) {
+    let clashes = 0;
+    for (let i = 0; i < kept.length; i++) {
+      for (let j = i + 1; j < kept.length; j++) {
+        const a = kept[i];
+        const b = kept[j];
+        if (!solid(a) || !solid(b)) continue;
+        const o = overlapOf(a, b);
+        if (o.x <= 0 || o.z <= 0) continue;
+        clashes++;
+        const order = (RANK[a.kind] - RANK[b.kind]) || (areaOf(a) - areaOf(b));
+        const loser = order >= 0 ? b : a;
+        const winner = loser === a ? b : a;
+        const give = Math.min(o.x, o.z) + CLEAR;
+        if (o.x < o.z) {
+          if (loser.w - give < 4) { loser.w = 0; continue; }
+          loser.x += Math.sign(loser.x - winner.x || 1) * (give / 2);
+          loser.w -= give;
+        } else {
+          if (loser.d - give < 4) { loser.d = 0; continue; }
+          loser.z += Math.sign(loser.z - winner.z || 1) * (give / 2);
+          loser.d -= give;
+        }
+        trimmed++;
+      }
+    }
+    if (clashes === 0) break;
+  }
+
+  const survivors = kept.filter((s) => s.w > 0 && s.d > 0);
+  for (const s of survivors) {
+    s.x = Number(s.x.toFixed(1));
+    s.z = Number(s.z.toFixed(1));
+    s.w = Number(s.w.toFixed(1));
+    s.d = Number(s.d.toFixed(1));
+  }
+  console.log(
+    `  declash: ${enclosures} enclosures reclassified, ${dropped.length} duplicates dropped, ` +
+    `${trimmed} trims, ${kept.length - survivors.length} footprints trimmed away`,
+  );
+  return survivors;
 }
 
 const toLocal = (lat, lon) => ({
@@ -242,12 +435,14 @@ for (const el of data.elements) {
 
 structures.push(...SUPPLEMENT);
 
+const resolved = declash(structures);
+
 // North to south, so the emitted file reads down the axis the way the map does.
-structures.sort((a, b) => a.z - b.z || a.x - b.x);
+resolved.sort((a, b) => a.z - b.z || a.x - b.x);
 
 const counts = {};
-for (const s of structures) counts[s.kind] = (counts[s.kind] ?? 0) + 1;
-console.log(`  ${structures.length} structures inside the walls:`, counts);
+for (const s of resolved) counts[s.kind] = (counts[s.kind] ?? 0) + 1;
+console.log(`  ${resolved.length} structures inside the walls:`, counts);
 
 if (dry) {
   process.exit(0);
@@ -316,7 +511,7 @@ export interface Structure {
 export const STRUCTURES: readonly Structure[] = [
 `;
 
-const body = structures
+const body = resolved
   .map((s) => {
     // Only the English name earns a trailing comment; repeating the Chinese one
     // that is already in the line would just be noise.

@@ -157,11 +157,8 @@ export class PaintSystem implements System {
     },
     ctx: GameContext,
   ): void {
-    const receiver = this.surfaces.get(impact.colliderHandle);
-    if (!receiver || !this.atlas) return;
-
-    this.proxy.geometry = receiver.geometry;
-    this.proxy.matrixWorld.copy(receiver.matrixWorld);
+    const receivers = this.surfaces.get(impact.colliderHandle);
+    if (!receivers || receivers.length === 0 || !this.atlas) return;
 
     // Faster hits splash wider.
     const speedScale = clamp(
@@ -186,33 +183,48 @@ export class PaintSystem implements System {
 
     this.decalSize.set(radius * 2, radius * 2, PROJECTION_DEPTH);
 
-    const decal = new DecalGeometry(
-      this.proxy,
-      impact.point,
-      this.orientation,
-      this.decalSize,
-    );
+    // A collider can stand behind more than one merged mesh — a wall is a stone
+    // base, a red body and a tiled coping, drawn in three different materials —
+    // so the candidates are tried in turn and the first one with triangles
+    // under the impact wins. All but the first cost nothing in the common case,
+    // where the surface the collider was tagged with is the one that was hit.
+    let decal: DecalGeometry | undefined;
+    let vertexCount = 0;
+    for (const receiver of receivers) {
+      this.proxy.geometry = receiver.geometry;
+      this.proxy.matrixWorld.copy(receiver.matrixWorld);
+      const candidate = new DecalGeometry(
+        this.proxy,
+        impact.point,
+        this.orientation,
+        this.decalSize,
+      );
+      const count = candidate.getAttribute('position').count;
+      if (count > 0 && count <= MAX_VERTS_PER_DECAL) {
+        decal = candidate;
+        vertexCount = count;
+        break;
+      }
+      candidate.dispose();
+    }
 
-    const positionAttr = decal.getAttribute('position');
-    const vertexCount = positionAttr.count;
-    decal.dispose();
-
-    // A decal that clipped nothing means the impact point missed the receiver's
-    // triangles — nothing to draw.
-    if (vertexCount === 0 || vertexCount > MAX_VERTS_PER_DECAL) return;
+    // Nothing clipped by any of them means the impact point missed every
+    // receiver's triangles — nothing to draw.
+    if (!decal) return;
 
     const variant = ctx.rng.int(0, this.atlas.variants);
     const tile = this.atlas.getTileTransform(variant);
     this.color.setHex(impact.color);
 
     const record: DecalRecord = {
-      positions: new Float32Array(positionAttr.array as Float32Array),
+      positions: new Float32Array(decal.getAttribute('position').array as Float32Array),
       normals: new Float32Array(decal.getAttribute('normal').array as Float32Array),
       uvs: new Float32Array(decal.getAttribute('uv').array as Float32Array),
       tint: [this.color.r, this.color.g, this.color.b],
       tile: [tile.offsetX, tile.offsetY, tile.scale],
       vertexCount,
     };
+    decal.dispose();
 
     if (this.writeOffset + vertexCount > MAX_VERTS) this.evictOldest();
     if (this.writeOffset + vertexCount > MAX_VERTS) return;

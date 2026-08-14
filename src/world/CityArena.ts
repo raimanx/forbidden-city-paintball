@@ -17,7 +17,8 @@ import { createCelMaterial } from '../render/CelMaterial';
 import { shadowMapSize } from '../render/Renderer';
 import { Sky } from '../render/Sky';
 import { Backdrop } from './Backdrop';
-import { CITY_COLORS, buildStructure, type BoxCollider } from './CityBuilding';
+import { CITY_COLORS, buildStructure, surroundings, type BoxCollider } from './CityBuilding';
+import { buildCoursePiece, courseSites, type CourseSite } from './CityCourse';
 import { CityProps } from './CityProps';
 import {
   GOLDEN_RIVER,
@@ -30,6 +31,7 @@ import {
   TERRACE,
   WALL,
   heightAt,
+  onTheGreatTerrace,
   planLength,
   planX,
   planZ,
@@ -42,9 +44,10 @@ import { Water } from './Water';
 /**
  * The Forbidden City arena.
  *
- * Assembles the ground, the compound's 798 structures, the perimeter wall, the
- * great terrace and the moat into a playable map, and registers every collider
- * with the paint system so that anything you can shoot, you can paint.
+ * Assembles the ground, the compound's 783 structures, the perimeter wall, the
+ * great terrace, the moat and the paintball course somebody trucked into the
+ * courtyards into a playable map, and registers every collider with the paint
+ * system so that anything you can shoot, you can paint.
  *
  * ## Districts
  *
@@ -97,6 +100,8 @@ interface District {
   roof: MeshBuilder;
   timber: MeshBuilder;
   stone: MeshBuilder;
+  /** Roof colliders, as corner lists — see `CityBuilding.BuildTarget`. */
+  hulls: Float32Array[];
 }
 
 export class CityArenaSystem implements System {
@@ -109,6 +114,15 @@ export class CityArenaSystem implements System {
   private sky?: Sky;
   private sun?: DirectionalLight;
   private sunTarget?: Object3D;
+
+  /**
+   * Where the paintball course ended up.
+   *
+   * Kept because the pieces are dealt into the courtyards from the rng rather
+   * than authored: nothing else — not the tests, not a screenshot script — has
+   * any way to find a container to walk into.
+   */
+  readonly course: CourseSite[] = [];
 
   private readonly disposables: Array<{ dispose(): void }> = [];
   private readonly group = new Group();
@@ -204,11 +218,17 @@ export class CityArenaSystem implements System {
     const targetFor = (key: string): District => {
       let d = districts.get(key);
       if (!d) {
-        d = { roof: new MeshBuilder(), timber: new MeshBuilder(), stone: new MeshBuilder() };
+        d = {
+          roof: new MeshBuilder(), timber: new MeshBuilder(), stone: new MeshBuilder(),
+          hulls: [],
+        };
         districts.set(key, d);
       }
       return d;
     };
+
+    // What each structure has to be built against — see `Surroundings`.
+    const around = surroundings(heightAt);
 
     for (const structure of STRUCTURES) {
       // The great terrace is built here, from `CityLayout.TERRACE`, because the
@@ -217,11 +237,24 @@ export class CityArenaSystem implements System {
       // second slab 0.7m above the first, overhanging the stairs by thirteen
       // metres. From the courtyard it was invisible; walking up the stairs you
       // stopped dead halfway with clear air ahead of you.
-      if (structure.kind === 'platform' && onTheGreatTerrace(structure)) continue;
+      if (structure.kind === 'platform'
+          && onTheGreatTerrace(planX(structure.x), planZ(structure.z))) continue;
 
       const key = districtOf(planX(structure.x), planZ(structure.z));
-      const boxes = buildStructure(structure, heightAt, targetFor(key));
+      const boxes = buildStructure(structure, heightAt, targetFor(key), around);
       for (const box of boxes) {
+        colliders.push(box);
+        colliderDistrict.push(key);
+      }
+    }
+
+    // And the paintball course: the containers, towers and barricades somebody
+    // trucked into the courtyards this morning. Placed against the same plan the
+    // buildings came from, so nothing lands inside a hall.
+    this.course.push(...courseSites(ctx.rng, around));
+    for (const site of this.course) {
+      const key = districtOf(site.x, site.z);
+      for (const box of buildCoursePiece(site, heightAt, targetFor(key), ctx.rng)) {
         colliders.push(box);
         colliderDistrict.push(key);
       }
@@ -265,16 +298,47 @@ export class CityArenaSystem implements System {
       })),
     );
     const identity = new Matrix4();
+
+    /**
+     * Every mesh in a district that a collider there might have been drawn by,
+     * starting with the one it says it was.
+     *
+     * Not one mesh, as this used to hand over. Geometry is merged by material,
+     * and a collider very often stands behind more than one of them: a
+     * courtyard wall is a red body with a tiled coping, the perimeter wall adds
+     * a stone base course under both, and a building is a stone plinth carrying
+     * a timber wall. Registering the timber mesh for all of them meant a splat
+     * on any stone or tiled face of the compound found no triangles under it and
+     * was dropped — silently, since a paintball that leaves no mark looks
+     * exactly like a paintball that missed.
+     */
+    const receiversFor = (key: string, surface?: Surface) => {
+      const order: Surface[] = surface
+        ? [surface, ...(['timber', 'stone', 'roof'] as Surface[]).filter((s) => s !== surface)]
+        : ['timber', 'stone', 'roof'];
+      return order
+        .map((s) => byKeyAndSurface.get(`${key}/${s}`))
+        .filter((mesh): mesh is Mesh => Boolean(mesh))
+        .map((mesh) => ({ geometry: mesh.geometry, matrixWorld: identity }));
+    };
+
     created.forEach((collider, i) => {
       const key = colliderDistrict[i]!;
-      // Paint projects against whichever district mesh covers this collider.
-      // Walls and plinths are drawn in different materials, so the timber mesh
-      // is the receiver where there is one and the stone mesh otherwise —
-      // between them they hold every triangle of the building that was hit.
-      const mesh = byKeyAndSurface.get(`${key}/timber`) ?? byKeyAndSurface.get(`${key}/stone`);
-      if (!mesh) return;
-      this.surfaces.register(collider.handle, { geometry: mesh.geometry, matrixWorld: identity });
+      this.surfaces.registerAll(collider.handle, receiversFor(key, colliders[i]!.surface));
     });
+
+    // The roofs, as hulls of their own shape rather than boxes. Built after the
+    // meshes so each one can be registered against the tile mesh it came from.
+    let roofColliders = 0;
+    for (const [key, district] of districts) {
+      if (district.hulls.length === 0) continue;
+      const hulls = ctx.physics.createStaticHulls(district.hulls);
+      for (const collider of hulls) {
+        if (!collider) continue;
+        this.surfaces.registerAll(collider.handle, receiversFor(key, 'roof'));
+        roofColliders++;
+      }
+    }
 
     const triangles: Record<string, number> = {};
     for (const [key, district] of districts) {
@@ -284,7 +348,8 @@ export class CityArenaSystem implements System {
       void key;
     }
     console.info(
-      `city: ${STRUCTURES.length} structures, ${meshes} meshes, ${created.length} colliders, ` +
+      `city: ${STRUCTURES.length} structures, ${this.course.length} course pieces, ` +
+      `${meshes} meshes, ${created.length} box colliders, ${roofColliders} roof hulls, ` +
       `triangles ${JSON.stringify(triangles)}`,
     );
   }
@@ -337,7 +402,10 @@ export class CityArenaSystem implements System {
         out.roof.box(cx, groundY + WALL.height + 0.22, cz,
           hw + 0.3, 0.22, hd + 0.3, CITY_COLORS.tile);
 
-        colliders.push({ cx, cy: groundY + WALL.height / 2, cz, hw, hh: WALL.height / 2, hd });
+        colliders.push({
+          cx, cy: groundY + WALL.height / 2, cz,
+          hw, hh: WALL.height / 2, hd, surface: 'timber',
+        });
         keys.push('wall');
       }
     };
@@ -381,7 +449,9 @@ export class CityArenaSystem implements System {
       const t2 = planLength(2.2);
       const face = (cx1: number, cz1: number, fhw: number, fhd: number): void => {
         out.stone.box(cx1, cy, cz1, fhw, faceH / 2, fhd, CITY_COLORS.marble);
-        colliders.push({ cx: cx1, cy, cz: cz1, hw: fhw, hh: faceH / 2, hd: fhd });
+        colliders.push({
+          cx: cx1, cy, cz: cz1, hw: fhw, hh: faceH / 2, hd: fhd, surface: 'stone',
+        });
         keys.push('terrace');
       };
       face(0, centerZ - hz, hx, t2 / 2);
@@ -446,7 +516,8 @@ export class CityArenaSystem implements System {
       const z = z0 + stepRun * (steps - i - 0.5);
       out.stone.box(0, y, z, stairHalfWidth, stepRise / 2, stepRun / 2, CITY_COLORS.marble);
       colliders.push({
-        cx: 0, cy: y, cz: z, hw: stairHalfWidth, hh: stepRise / 2, hd: stepRun / 2,
+        cx: 0, cy: y, cz: z,
+        hw: stairHalfWidth, hh: stepRise / 2, hd: stepRun / 2, surface: 'stone',
       });
       keys.push('terrace');
     }
@@ -512,7 +583,7 @@ export class CityArenaSystem implements System {
         CITY_COLORS.marble);
       colliders.push({
         cx: bridge.x, cy: 0.14, cz: centerZ,
-        hw: bridge.halfWidth, hh: 0.14, hd: halfDepth,
+        hw: bridge.halfWidth, hh: 0.14, hd: halfDepth, surface: 'stone',
       });
       keys.push('bridge');
 
@@ -526,7 +597,7 @@ export class CityArenaSystem implements System {
           out.stone.box(x, 0.7, z, 0.12, 0.24, 0.12, CITY_COLORS.marbleShade);
         }
         colliders.push({
-          cx: x, cy: 0.5, cz: centerZ, hw: 0.18, hh: 0.5, hd: halfDepth,
+          cx: x, cy: 0.5, cz: centerZ, hw: 0.18, hh: 0.5, hd: halfDepth, surface: 'stone',
         });
         keys.push('bridge');
       }
@@ -616,21 +687,6 @@ function wallGaps(): {
     if (crosses(x, hw, WALL.halfX)) gaps.east.push([z - hd - margin, z + hd + margin]);
   }
   return gaps;
-}
-
-/**
- * True when a platform from the survey is part of the great terrace.
- *
- * Generous on purpose: these polygons trace the terrace's aprons, which run a
- * little past the terrace's own bounds, and half-covering it is worse than not
- * covering it at all.
- */
-function onTheGreatTerrace(s: Structure): boolean {
-  const z = planZ(s.z);
-  const centerZ = (TERRACE.northZ + TERRACE.southZ) / 2;
-  const halfZ = (TERRACE.southZ - TERRACE.northZ) / 2 + planLength(30);
-  return Math.abs(planX(s.x)) < TERRACE.halfX + planLength(20)
-    && Math.abs(z - centerZ) < halfZ;
 }
 
 /** True when a footprint centred at `c` with half-extent `h` spans `line`. */

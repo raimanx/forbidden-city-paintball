@@ -62,7 +62,10 @@ interface PropSpec {
 const SPECS: Record<string, PropSpec> = {
   vat: { color: 0x8a6a3c, half: { x: 0.9, y: 0.6, z: 0.9 }, centerY: 0.6 },
   lion: { color: 0xa9a396, half: { x: 0.6, y: 0.8, z: 0.4 }, centerY: 0.8 },
-  huabiao: { color: 0xd8d2c2, half: { x: 0.45, y: 2.5, z: 0.45 }, centerY: 2.5 },
+  // Sized to the shaft rather than to the cloud disc at its head: at 0.45 the
+  // box stood 20cm proud of the marble, and a paintball that stops 20cm off a
+  // column stops in mid-air with nothing near enough to take the splat.
+  huabiao: { color: 0xd8d2c2, half: { x: 0.28, y: 2.5, z: 0.28 }, centerY: 2.5 },
   sundial: { color: 0xd8d2c2, half: { x: 0.5, y: 0.65, z: 0.5 }, centerY: 0.65 },
   burner: { color: 0x7d6236, half: { x: 0.45, y: 0.5, z: 0.45 }, centerY: 0.5 },
   rock_a: { color: 0x8b8578, half: { x: 0.8, y: 1.1, z: 0.7 }, centerY: 1.1 },
