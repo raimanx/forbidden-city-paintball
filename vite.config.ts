@@ -16,12 +16,14 @@ import wasm from 'vite-plugin-wasm';
  */
 export default defineConfig({
   /**
-   * No `base` is set: GitHub Pages serves this from the custom domain
-   * `v0.maize.live`, so the app sits at the domain root and Vite's default `/`
-   * is correct. It used to be a project site under `/dp-paintball/`, which is
-   * why anything URL-building still goes through `import.meta.env.BASE_URL` —
-   * that keeps working whichever way this setting goes.
+   * GitHub Pages serves this as a project site under
+   * `/forbidden-city-paintball/`, not from a domain root. A relative base emits
+   * asset URLs relative to the HTML document, so the same build works at that
+   * subpath, at a domain root, and at `vite preview`'s `/` — which is what the
+   * Playwright suites in `tools/` point at. Anything URL-building goes through
+   * `import.meta.env.BASE_URL`, which resolves against the document either way.
    */
+  base: './',
   plugins: [wasm()],
   build: {
     target: 'esnext',

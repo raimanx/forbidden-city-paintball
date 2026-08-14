@@ -4,9 +4,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A browser paintball game: Three.js + Rapier3D, third-person, single-player against
-NPC bots, set in a stylised Central Park. Hand-drawn look — Borderlands linework
-over Ghibli colour and light. Nobody dies; hits are counters.
+Forbidden City Paintball — a browser paintball game: Three.js + Rapier3D,
+third-person, single-player against NPC bots. Hand-drawn look — Borderlands
+linework over Ghibli colour and light. Nobody dies; hits are counters.
+
+The arena geometry is still the stylised Central Park the project started from
+(`src/world/Park*.ts`, `Cityscape.ts`); only the game's name has changed so far.
 
  - `CLAUDE/PROMPT_0.md` is the original brief. 
  - `CLAUDE/PLAN_n.md` is what Claude plan to work on after receiving the prompt or feedback of iteration n

@@ -1,6 +1,6 @@
 import { isTouchDevice } from '../core/Device';
 
-const REPO_URL = 'https://github.com/doublependu/dp-paintball';
+const REPO_URL = 'https://github.com/raimanx/forbidden-city-paintball';
 
 /** What the card says under the button. Anywhere on it resumes, either way. */
 const RESUME_NOTE = isTouchDevice() ? 'or tap anywhere' : 'or click anywhere';
@@ -85,7 +85,7 @@ export class PauseOverlay {
     this.root.className = 'pause';
     this.root.innerHTML = `
       <div class="pause__card">
-        <div class="pause__eyebrow">Central Park Paintball</div>
+        <div class="pause__eyebrow">Forbidden City Paintball</div>
         <h1 class="pause__title">Paused</h1>
         <p class="pause__subtitle">The paint will wait.</p>
 

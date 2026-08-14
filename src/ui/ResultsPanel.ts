@@ -1,7 +1,7 @@
 import { isTouchDevice } from '../core/Device';
 import type { ScoreRow } from './Hud';
 
-const REPO_URL = 'https://github.com/doublependu/dp-paintball';
+const REPO_URL = 'https://github.com/raimanx/forbidden-city-paintball';
 
 /** GitHub's mark, as a path on a 16×16 viewBox. Inlined so it costs no request. */
 const GITHUB_MARK =

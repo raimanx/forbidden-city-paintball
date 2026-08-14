@@ -1,5 +1,9 @@
-# dp-paintball
-Create a web game - paintball
+# Forbidden City Paintball
+
+A browser paintball game — Three.js + Rapier3D, third-person, single-player
+against NPC bots. Hand-drawn look. Nobody dies; hits are counters.
+
+**Play it: https://raimanx.github.io/forbidden-city-paintball/**
 
 
 

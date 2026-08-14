@@ -55,7 +55,7 @@ const { fps } = manifest;
 const CUTS = [
   {
     name: 'youtube',
-    file: 'dp-paintball-gameplay-youtube.mp4',
+    file: 'forbidden-city-paintball-gameplay-youtube.mp4',
     beats: ['fountain-reveal', 'arcade-approach', 'duel-mall', 'bow-bridge',
             'duel-meadow', 'meadow-skyline', 'mall-sprint', 'duel-open',
             'lake-shore', 'results'],
@@ -65,7 +65,7 @@ const CUTS = [
   },
   {
     name: 'x',
-    file: 'dp-paintball-gameplay-x.mp4',
+    file: 'forbidden-city-paintball-gameplay-x.mp4',
     beats: ['duel-meadow', 'fountain-reveal', 'duel-mall', 'bow-bridge',
             'duel-open', 'results'],
     // X re-encodes everything anyway, so the job here is to hand its
