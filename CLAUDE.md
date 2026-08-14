@@ -19,4 +19,10 @@ The arena geometry is still the stylised Central Park the project started from
 In addition, 
  - `CLAUDE/CLAUDE_0.md` is the claude file generated with `/init` after the plan 0 is executed. 
 
+## Instruction
+
+ 1. If a single agent is working on the project then update files in this folder directly, but don't stage, commit or push; let me do those after revision. 
+
+
+
 
