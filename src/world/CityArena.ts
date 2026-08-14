@@ -209,6 +209,14 @@ export class CityArenaSystem implements System {
     };
 
     for (const structure of STRUCTURES) {
+      // The great terrace is built here, from `CityLayout.TERRACE`, because the
+      // navgrid needs its top surface to be ground. The survey has it too — as
+      // two big unnamed platform polygons — and building those as well laid a
+      // second slab 0.7m above the first, overhanging the stairs by thirteen
+      // metres. From the courtyard it was invisible; walking up the stairs you
+      // stopped dead halfway with clear air ahead of you.
+      if (structure.kind === 'platform' && onTheGreatTerrace(structure)) continue;
+
       const key = districtOf(planX(structure.x), planZ(structure.z));
       const boxes = buildStructure(structure, heightAt, targetFor(key));
       for (const box of boxes) {
@@ -362,10 +370,26 @@ export class CityArenaSystem implements System {
 
       // Four faces of the tier, as slabs rather than one box, so the terrace is
       // hollow and costs four boxes a tier instead of a solid volume of them.
+      //
+      // The south face is built in two, with the stair opening cut out of the
+      // middle. Every tier has to be cut, not just the bottom one: the stairs
+      // climb through all three, and a facing left whole across the opening is
+      // an invisible wall two thirds of the way up your own staircase.
       const t2 = planLength(2.2);
+      const face = (cx1: number, cz1: number, fhw: number, fhd: number): void => {
+        out.stone.box(cx1, cy, cz1, fhw, faceH / 2, fhd, CITY_COLORS.marble);
+        colliders.push({ cx: cx1, cy, cz: cz1, hw: fhw, hh: faceH / 2, hd: fhd });
+        keys.push('terrace');
+      };
+      face(0, centerZ - hz, hx, t2 / 2);
+      const shoulder = (hx - stairHalfWidth) / 2;
+      if (shoulder > 0.2) {
+        for (const side of [-1, 1]) {
+          face(side * (stairHalfWidth + shoulder), centerZ + hz, shoulder, t2 / 2);
+        }
+      }
       for (const side of [-1, 1]) {
-        out.stone.box(0, cy, centerZ + side * hz, hx, faceH / 2, t2 / 2, CITY_COLORS.marble);
-        out.stone.box(side * hx, cy, centerZ, t2 / 2, faceH / 2, hz, CITY_COLORS.marble);
+        face(side * hx, centerZ, t2 / 2, hz);
       }
 
       // The balustrade — 栏杆. Three pieces, not one: a solid kerb along the
@@ -402,20 +426,6 @@ export class CityArenaSystem implements System {
       rim('z', -hx, centerZ - hz, centerZ + hz);
       rim('z', hx, centerZ - hz, centerZ + hz);
 
-      colliders.push({
-        cx: 0, cy, cz: centerZ + hz, hw: hx, hh: faceH / 2, hd: t2 / 2,
-      });
-      keys.push('terrace');
-      colliders.push({
-        cx: 0, cy, cz: centerZ - hz, hw: hx, hh: faceH / 2, hd: t2 / 2,
-      });
-      keys.push('terrace');
-      for (const side of [-1, 1]) {
-        colliders.push({
-          cx: side * hx, cy, cz: centerZ, hw: t2 / 2, hh: faceH / 2, hd: hz,
-        });
-        keys.push('terrace');
-      }
     }
 
     // The stairs up the south face, flanked by the carved dragon ramp that runs
@@ -423,7 +433,11 @@ export class CityArenaSystem implements System {
     const steps = 14;
     const stepRise = TERRACE.height / steps;
     const stepRun = planLength(1.4);
-    const z0 = centerZ + halfZ;
+    // The top step lands where the *terrain* reaches full terrace height, not
+    // at the terrace's nominal edge. `heightAt` ramps the terrace up over its
+    // skirt, so a flight ending at the edge drops the player 1.8m onto that
+    // ramp and leaves them grinding up a slope with a staircase behind them.
+    const z0 = centerZ + halfZ - TERRACE.skirt + 0.4;
     for (let i = 0; i < steps; i++) {
       const y = stepRise * (i + 0.5);
       const z = z0 + stepRun * (steps - i - 0.5);
@@ -557,6 +571,21 @@ function wallGaps(): {
     if (crosses(x, hw, WALL.halfX)) gaps.east.push([z - hd - margin, z + hd + margin]);
   }
   return gaps;
+}
+
+/**
+ * True when a platform from the survey is part of the great terrace.
+ *
+ * Generous on purpose: these polygons trace the terrace's aprons, which run a
+ * little past the terrace's own bounds, and half-covering it is worse than not
+ * covering it at all.
+ */
+function onTheGreatTerrace(s: Structure): boolean {
+  const z = planZ(s.z);
+  const centerZ = (TERRACE.northZ + TERRACE.southZ) / 2;
+  const halfZ = (TERRACE.southZ - TERRACE.northZ) / 2 + planLength(30);
+  return Math.abs(planX(s.x)) < TERRACE.halfX + planLength(20)
+    && Math.abs(z - centerZ) < halfZ;
 }
 
 /** True when a footprint centred at `c` with half-extent `h` spans `line`. */

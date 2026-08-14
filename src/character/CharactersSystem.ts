@@ -102,9 +102,19 @@ export class CharactersSystem implements System {
         this.splatAtlas,
       );
       // Drop the spawn onto the ground, and onto a cell that is actually
-      // walkable — a bot spawned inside the fountain would never path anywhere.
+      // walkable and actually *reachable* — a bot spawned inside a hall, or in
+      // a sealed courtyard, would never path anywhere.
+      //
+      // The fallback matters more here than it did in the park. The park was
+      // open ground with props on it, so a hint always had walkable cells a few
+      // metres away; this compound is four fifths building and a hint can land
+      // in a courtyard the flood fill has pruned entirely, where searching
+      // outward finds nothing at all within its twelve rings. Somewhere random
+      // and reachable is a far better answer than standing still in the dark
+      // for the whole round, which is what the old code did.
       const grounded =
         this.nav.nearestWalkable(spec.position.x, spec.position.z) ??
+        this.nav.randomWalkablePoint(ctx.rng, 400) ??
         new Vector3(spec.position.x, this.nav.groundAt(spec.position.x, spec.position.z), spec.position.z);
 
       const bot = new Bot(spec.id, PERSONALITIES[spec.personality % PERSONALITIES.length]!,

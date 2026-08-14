@@ -2,7 +2,7 @@
  * Headless tests for the match economy: finite paint, and the crate that tops
  * it up.
  *
- * Runs against the *park*, not the test course — the course is deliberately a
+ * Runs against the *compound*, not the test course — the course is deliberately a
  * sandbox with unlimited paint and no crate, which is the first thing asserted
  * here.
  *
@@ -66,7 +66,7 @@ async function lockPointer(what) {
 }
 
 await openManual(url);
-await lockPointer('the park');
+await lockPointer('the compound');
 
 const results = [];
 function check(name, pass, detail) {
@@ -86,7 +86,7 @@ const playerAmmo = () => page.evaluate(() => window.__paintball.match.ammo.get('
 async function retreat() {
   await page.evaluate(() => {
     const { player, state } = window.__paintball;
-    player.teleport(new (state.position.constructor)(-58, 3, -58));
+    player.teleport(new (state.position.constructor)(-150, 3, -20));
     state.pitch = -0.1;
   });
   await stepSim(0.4);
@@ -106,10 +106,10 @@ const start = await page.evaluate(() => ({
   entries: [...window.__paintball.match.ammo.entries()],
   sandbox: window.__paintball.match.sandbox,
 }));
-check('the park is not a sandbox', start.sandbox === false);
+check('the compound is not a sandbox', start.sandbox === false);
 check(
   'every character starts with the same finite load',
-  start.entries.length === 7 && start.entries.every(([, n]) => n === 100),
+  start.entries.length === 9 && start.entries.every(([, n]) => n === 100),
   start.entries.map(([id, n]) => `${id}:${n}`).join(' '),
 );
 
@@ -215,7 +215,7 @@ const restock = await page.evaluate(() => {
     ?? nav.nearestWalkable(loot.position.x - 9, loot.position.z);
   bot.position.copy(from);
   // Keep the player out of it, so the player cannot take the crate first.
-  player.teleport(new (state.position.constructor)(-58, 3, -58));
+  player.teleport(new (state.position.constructor)(-150, 3, -20));
   // Watched as an event, not as a final ammo count: a bot that restocks then
   // finds someone to shoot at will have spent some of it by the time we look.
   window.__taker = null;
@@ -351,9 +351,9 @@ check('running out of time ends the round',
       ended.phase === 'ended' && ended.endedBy === 'time' && ended.event?.reason === 'time',
       `phase=${ended.phase} by=${ended.endedBy}`);
 check('the results card is shown, with everyone on it',
-      ended.cardVisible && ended.rows === 7, `${ended.rows} rows`);
+      ended.cardVisible && ended.rows === 9, `${ended.rows} rows`);
 check('every character is taken out of the world and onto the stage',
-      ended.onStage === 7, `${ended.onStage}/7 reparented`);
+      ended.onStage === 9, `${ended.onStage}/9 reparented`);
 // Facing -Z, camera at +Z: a line-up at rotation 0 presents its back, and every
 // splat on a chest is hidden behind the character wearing it.
 check('the line-up starts facing the camera', Math.abs(ended.facing - Math.PI) < 0.001,
@@ -420,7 +420,7 @@ check('a fresh round refills, rescores and puts out a new crate',
         ` crate ${restarted.crate}`);
 check('the results card is put away', restarted.cardVisible === false);
 check('the characters go back into the world',
-      restarted.inWorld === 7, `${restarted.inWorld}/7 back in the park`);
+      restarted.inWorld === 9, `${restarted.inWorld}/9 back in the world`);
 
 // --- and back to where they started ----------------------------------------
 const displaced = await page.evaluate((spawns) => {
@@ -435,7 +435,7 @@ const strays = displaced.filter((d) => d.away > 2.5);
 check('everyone is back at their spawn for the new round', strays.length === 0,
       displaced.map((d) => `${d.id}:${d.away}m`).join(' '));
 
-// --- The other ending: the last paintball in the park --------------------
+// --- The other ending: the last paintball in the compound ----------------
 await page.evaluate(() => {
   const { loot, match } = window.__paintball;
   window.__ended = null;

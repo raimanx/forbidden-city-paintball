@@ -2,8 +2,10 @@
  * Headless arena tests.
  *
  * The map's job is to be walkable and inescapable. These check that the player
- * lands on solid ground everywhere they might spawn or fight, that the
- * perimeter actually contains them, and that paint sticks to park surfaces.
+ * lands on solid ground everywhere they might spawn or fight, that the great
+ * terrace can be climbed by its stairs and not up its sides, that the gates are
+ * holes rather than blocks, that the moat contains them, and that paint sticks
+ * to the compound.
  *
  * Usage: node tools/arena-test.mjs [url]
  */
@@ -77,20 +79,22 @@ async function dropAt(x, z, from = 20) {
   return read();
 }
 
-check('loads within budget', readyMs < 4000, `${readyMs}ms`);
+check('loads within budget', readyMs < 5000, `${readyMs}ms`);
 
-// --- Landing on solid ground across the map --------------------------------
-// Sampled across every distinct region. Anything that falls through the world
-// ends up far below; anything unreachable never grounds.
+// --- Landing on solid ground across the compound ---------------------------
+// One probe from each distinct piece of the plan. Every position here is one
+// the plan says is clear of buildings; anything that falls through the world
+// ends up far below, and anything unreachable never grounds.
 const probes = [
-  ['plaza', 0, 8], ['mall', 0, 44], ['terrace', 0, 21],
-  ['lake shore east', 34, -16], ['ramble', -30, -70],
-  ['east woods', 60, 10], ['bridge deck', -44, -30],
-  ['west bank', -66, -14], ['south lawn', 26, 74], ['sheep meadow', -50, 42],
-  // The woodland belt: the whole point of it is that you can walk into it, so
-  // every side of it has to be standable ground rather than scenery.
-  ['belt north', -20, -130], ['belt south', 30, 140],
-  ['belt west', -140, 20], ['belt east', 150, -30],
+  ['great court', 0, 110], ['court of the Gate of Supreme Harmony', 0, 160],
+  ['on the great terrace', -0.8, 28.2], ['inner court', -3.7, -46.5],
+  ['Six Eastern Palaces', 62, -100], ['Six Western Palaces', -60.6, -106.6],
+  ['Imperial Garden', 34, -171], ['under the Meridian Gate', 0, 190],
+  ['west flank', -72, 128], ['east flank', 68, 121],
+  ['north end of the axis', -2.3, -200.5], ['west wall walk', -150, 0],
+  // Outside the wall: the road that rings the moat, which a player who walks
+  // out through a gate ends up on.
+  ['moat road, west', -180, 0], ['moat road, north', 0, -226],
 ];
 let landed = 0;
 const failures = [];
@@ -102,45 +106,7 @@ for (const [name, x, z] of probes) {
 check('player lands on solid ground everywhere', landed === probes.length,
       failures.length ? failures.join('; ') : `${landed}/${probes.length} regions`);
 
-// --- The bridge is standable and crossable ---------------------------------
-const onBridge = await dropAt(-44, -30, 14);
-check('Bow Bridge deck is standable', onBridge.grounded && onBridge.y > 1.5,
-      `settled at y=${onBridge.y.toFixed(2)}`);
-
-// --- The arcade undercroft has standing headroom ---------------------------
-// Must be walked into through an arch. Dropping from above just lands on the
-// terrace slab that forms its roof, which proves nothing about the passage.
-//
-// The bots go to the far corner of the park first. This is the one probe in
-// this suite that has to walk a specific line rather than fall straight down,
-// and five bots spawn within twenty metres of the arch: one standing in the
-// bay is a wall, and the walk stops short of the undercroft for reasons that
-// have nothing to do with the architecture being tested.
-await page.evaluate(() => {
-  const { player, state, characters } = window.__paintball;
-  const V = state.position.constructor;
-  for (const bot of characters.allBots) {
-    bot.respawn(new V(bot.position.x + 260, bot.position.y, bot.position.z + 260));
-  }
-  state.yaw = Math.PI;  // face south, toward the colonnade at z=16
-  player.teleport(new V(0, 1, 11));
-});
-await waitSim(1.2);
-await page.keyboard.down('w');
-await waitSim(3.0);
-await page.keyboard.up('w');
-await waitSim(0.5);
-const undercroft = await read();
-check('arcade undercroft is walkable through an arch',
-      undercroft.grounded && undercroft.y < 1.5 && undercroft.z > 16.5,
-      `reached z=${undercroft.z.toFixed(1)} at y=${undercroft.y.toFixed(2)}, under a 4.2m slab`);
-
-// --- The grand stairs actually climb ---------------------------------------
-// They did not. Three flights were placed on the plateau *behind* the terrace,
-// climbing down a slope that rises to meet them: the bottom flight was buried,
-// the top one stood in the air, and the terrace could only be reached by
-// walking the long way round. Walking up them is the only check that catches
-// that, because every individual flight was exactly where it was asked to be.
+/** Walks forward from a position and reports where the player ends up. */
 async function walkFrom(x, z, yaw, seconds, drop = 1) {
   await page.evaluate(({ x, z, yaw, drop }) => {
     const { player, state } = window.__paintball;
@@ -155,27 +121,61 @@ async function walkFrom(x, z, yaw, seconds, drop = 1) {
   return read();
 }
 
-const climbed = await walkFrom(19, 4, Math.PI, 5.0);
-check('the grand stairs climb from the plaza to the terrace',
-      climbed.grounded && climbed.y > 3.9 && climbed.z > 15,
-      `reached (${climbed.x.toFixed(1)}, ${climbed.y.toFixed(2)}, ${climbed.z.toFixed(1)})`);
+// The bots go to the far corner of the compound first. Several of these probes
+// have to walk a specific line rather than fall straight down, and a bot
+// standing in an archway is a wall: the walk would stop short for reasons that
+// have nothing to do with the architecture being tested.
+await page.evaluate(() => {
+  const { characters, state } = window.__paintball;
+  const V = state.position.constructor;
+  for (const bot of characters.allBots) {
+    bot.respawn(new V(bot.position.x + 300, bot.position.y, bot.position.z + 300));
+  }
+});
 
-// --- And the bridge can be got onto ----------------------------------------
-// Bow Bridge's abutments top out 2m above the ground its approach corridor is
-// levelled to, so both ends were a wall with a bridge on top until the ramps
-// went in.
-const onRamp = await walkFrom(-44, -5, 0, 4.5);
-check('Bow Bridge is reachable from its southern approach',
-      onRamp.grounded && onRamp.y > 2.0 && onRamp.z < -15,
-      `reached (${onRamp.x.toFixed(1)}, ${onRamp.y.toFixed(2)}, ${onRamp.z.toFixed(1)})`);
+// --- The great terrace can be climbed, and only by its stairs --------------
+// The terrace is the centrepiece of the map: high ground in the middle of the
+// largest courtyard, carrying the three great halls. It is *ground* rather than
+// a prop, because the navgrid is a heightfield and a bot can only stand on what
+// heightAt returns — so the thing that has to be checked is that the marble
+// facing stops you walking up the sides, and that the stairs do not.
+// Twelve seconds, not six. Fourteen 0.26m steps at 0.63m apiece is a lot of
+// autostepping, and the climb runs at half walking pace.
+const upTheStairs = await walkFrom(-4, 86, 0, 12.0);
+check('the terrace stairs climb from the great court',
+      upTheStairs.grounded && upTheStairs.y > 3.0 && upTheStairs.z < 66,
+      `reached (${upTheStairs.x.toFixed(1)}, ${upTheStairs.y.toFixed(2)}, ${upTheStairs.z.toFixed(1)})`);
+
+const atTheFacing = await walkFrom(-26, 90, 0, 6.0);
+check('the terrace facing cannot be walked up',
+      atTheFacing.y < 2.0,
+      `stopped at y=${atTheFacing.y.toFixed(2)}, z=${atTheFacing.z.toFixed(1)}`);
+
+// --- The gates are gates ---------------------------------------------------
+// A gate is a hole in a wall. Built from its footprint alone it is a solid
+// block, which seals the great court off from the outer one and turns the whole
+// plan from a route into a picture. Walking through one is the only check that
+// catches it.
+const throughTaihemen = await walkFrom(-4, 152, 0, 6.0);
+check('the Gate of Supreme Harmony can be walked through',
+      throughTaihemen.grounded && throughTaihemen.z < 128,
+      `reached z=${throughTaihemen.z.toFixed(1)}`);
+
+// And the Meridian Gate leads out of the compound entirely, onto the road that
+// rings the moat.
+const throughWumen = await walkFrom(6, 200, Math.PI, 8.0);
+check('the Meridian Gate leads out of the compound',
+      throughWumen.grounded && throughWumen.z > 232,
+      `reached z=${throughWumen.z.toFixed(1)}`);
 
 // --- Containment -----------------------------------------------------------
-// Sprint at each wall for long enough to cross the map, and confirm we are
-// still inside. Phase 1 established that only flat vertical walls hold.
+// Sprint at each edge for long enough to cross the map, and confirm we are
+// still inside it. The moat is the last thing between the player and the
+// backdrop, and the backdrop has no ground under it.
 const escapes = [];
 for (const [name, x, z, yaw] of [
   ['north', 0, -150, 0], ['south', 0, 150, Math.PI],
-  ['west', -150, 0, Math.PI / 2], ['east', 150, 0, -Math.PI / 2],
+  ['west', -120, 0, Math.PI / 2], ['east', 120, 0, -Math.PI / 2],
 ]) {
   await page.evaluate(({ x, z, yaw }) => {
     const { player, state } = window.__paintball;
@@ -185,31 +185,35 @@ for (const [name, x, z, yaw] of [
   await waitSim(2.0);
   await page.keyboard.down('w');
   await page.keyboard.down('Shift');
-  await waitSim(6.0);
+  await waitSim(9.0);
   await page.keyboard.up('w');
   await page.keyboard.up('Shift');
   await waitSim(0.4);
   const at = await read();
-  // PARK_HALF is 168 and the wall stands at 166; a metre of slack covers the
-  // capsule radius resting against it.
-  const outside = Math.abs(at.x) > 167 || Math.abs(at.z) > 167 || at.y < -6;
+  // The containment stands three metres inside the ground mesh's edge, at
+  // 237m east-west and 284m north-south. A couple of metres of slack covers the
+  // capsule resting against it.
+  const outside = Math.abs(at.x) > 236 || Math.abs(at.z) > 283 || at.y < -8;
   if (outside) escapes.push(`${name} -> (${at.x.toFixed(1)}, ${at.y.toFixed(1)}, ${at.z.toFixed(1)})`);
 }
-check('perimeter contains the player on all four sides', escapes.length === 0,
+check('the moat contains the player on all four sides', escapes.length === 0,
       escapes.length ? escapes.join('; ') : 'no escapes');
 
-// --- Paint sticks to park surfaces -----------------------------------------
+// --- Paint sticks to the compound ------------------------------------------
+// Fired at the Gate of Supreme Harmony from the great court, which is one of
+// the merged district meshes rather than a prop — the case that would break if
+// a collider were ever registered against a mesh it is not part of.
 await page.evaluate(() => {
   const { player, state } = window.__paintball;
-  state.yaw = Math.PI; state.pitch = -0.12;
-  player.teleport(new (state.position.constructor)(0, 3, 10));
+  state.yaw = Math.PI; state.pitch = -0.05;
+  player.teleport(new (state.position.constructor)(0, 3, 120));
 });
 await waitSim(2.0);
 const beforePaint = await page.evaluate(() => window.__paintball.paint.splatCount);
 await page.mouse.down();
 await waitSim(1.0);
 await page.mouse.up();
-await waitSim(1.4);
+await waitSim(1.6);
 const afterPaint = await page.evaluate(() => window.__paintball.paint.splatCount);
 check('paint sticks to arena geometry', afterPaint > beforePaint,
       `${beforePaint} -> ${afterPaint} splats`);

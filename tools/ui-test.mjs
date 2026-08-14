@@ -147,7 +147,7 @@ check('the splash renders to the canvas', afterHit > 0, `${afterHit} painted pix
 await page.evaluate(() => {
   const { player, state, characters } = window.__paintball;
   const V = state.position.constructor;
-  player.teleport(new V(-58, 3, -58));
+  player.teleport(new V(-150, 3, -20));
   // And the bots to the far corner. The drip below is measured over five
   // simulated seconds, and a bot that finds the player inside that window puts
   // *new* blobs on the lens — the count comes back unchanged and the check

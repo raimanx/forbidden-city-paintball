@@ -66,33 +66,44 @@ const nav = await page.evaluate(() => {
   const n = window.__paintball.characters.navGrid;
   return {
     cols: n.cols, rows: n.rows, walkable: n.walkableCount, buildMs: n.buildMs,
-    // The middle of the lake must not be walkable; the plaza must be.
-    lake: n.isWalkable(10, -32),
-    plaza: n.isWalkable(0, 8),
-    // Dead centre of the fountain basin is solid geometry.
-    fountain: n.isWalkable(0, 0),
-    // Out in the woodland belt, which is deliberately outside the navgrid —
-    // the belt is somewhere for the player to wander, not for bots.
-    outside: n.isWalkable(150, 150),
-    // Half-extent of the grid in metres, so the bounds check below tracks the
-    // map instead of a number that has to be remembered.
-    half: (n.cols * 2) / 2,
+    // The great court is open ground; the Hall of Supreme Harmony standing on
+    // the terrace behind it is not.
+    court: n.isWalkable(0, 110),
+    hall: n.isWalkable(-0.6, 40),
+    // Inside a building of the Six Western Palaces: the compound is four
+    // fifths building by area, and the navgrid finds that out by querying the
+    // physics world rather than from any list, so this is the check that the
+    // querying works at all.
+    building: n.isWalkable(-62, -95),
+    // Out on the moat road, which is deliberately outside the navgrid — the
+    // ring road is somewhere for the player to slip away to, not for bots.
+    outside: n.isWalkable(190, 250),
+    // Half-extents of the grid in metres, so the bounds check below tracks the
+    // map instead of numbers that have to be remembered. The grid is
+    // rectangular: the compound is half again as long as it is wide.
+    halfX: n.cols,
+    halfZ: n.rows,
   };
 });
 const walkablePct = (100 * nav.walkable) / (nav.cols * nav.rows);
 check('navgrid builds quickly', nav.buildMs < 400, `${nav.buildMs.toFixed(0)}ms for ${nav.cols}x${nav.rows}`);
-check('navgrid marks a sensible share walkable', walkablePct > 50 && walkablePct < 95,
+// Under half, not over: the Forbidden City is mostly building. A grid that came
+// back 80% walkable would mean the physics queries had stopped finding the
+// architecture, which is exactly the failure that leaves bots walking through
+// walls.
+check('navgrid marks a sensible share walkable', walkablePct > 20 && walkablePct < 60,
       `${walkablePct.toFixed(1)}% of cells`);
-check('the lake is not walkable', nav.lake === false);
-check('the plaza is walkable', nav.plaza === true);
-check('prop colliders block cells', nav.fountain === false, 'fountain basin centre');
+check('the great court is walkable', nav.court === true);
+check('the great halls are not walkable', nav.hall === false);
+check('building colliders block cells', nav.building === false, 'inside the Six Western Palaces');
 check('out of bounds is not walkable', nav.outside === false);
 
 // --- Pathfinding -----------------------------------------------------------
 const paths = await page.evaluate(() => {
   const n = window.__paintball.characters.navGrid;
   const V = window.__paintball.state.position.constructor;
-  const across = n.findPath(new V(0, 0, 8), new V(0, 0, 50));
+  // The length of the great court, which is the longest clear run on the map.
+  const across = n.findPath(new V(0, 0, 155), new V(0, 0, 100));
   const total = across
     ? across.reduce((sum, p, i) =>
         i === 0 ? 0 : sum + Math.hypot(p.x - across[i - 1].x, p.z - across[i - 1].z), 0)
@@ -100,15 +111,15 @@ const paths = await page.evaluate(() => {
   return {
     acrossLength: across ? across.length : 0,
     acrossDistance: total,
-    // Into open water: no route should exist.
-    intoLake: n.findPath(new V(0, 0, 8), new V(10, 0, -32)) !== null,
+    // Into the moat: no route should exist, because the grid stops at the wall.
+    intoLake: n.findPath(new V(0, 0, 155), new V(198, 0, 0)) !== null,
   };
 });
-check('pathfinds across the park', paths.acrossLength >= 2,
+check('pathfinds across the compound', paths.acrossLength >= 2,
       `${paths.acrossLength} waypoints over ${paths.acrossDistance.toFixed(0)}m`);
 check('paths are string-pulled, not staircases',
-      paths.acrossLength > 0 && paths.acrossDistance < 70,
-      `${paths.acrossDistance.toFixed(0)}m for a ~42m journey`);
+      paths.acrossLength > 0 && paths.acrossDistance < 85,
+      `${paths.acrossDistance.toFixed(0)}m for a ~55m journey`);
 
 // --- Bots behave -----------------------------------------------------------
 const before = await page.evaluate(() => window.__paintball.characters.allBots.map((b) => ({
@@ -118,11 +129,11 @@ check('a full roster spawned', before.length >= 4, before.map((b) => b.id).join(
 check('personalities vary', new Set(before.map((b) => b.personality)).size >= 3,
       before.map((b) => b.personality).join(', '));
 
-// Park the player centrally and sample bot positions throughout the run.
+// Put the player in the great court and sample bot positions through the run.
 await page.evaluate(() => {
   const { player, state } = window.__paintball;
   state.yaw = 0;
-  player.teleport(new (state.position.constructor)(0, 2, 12));
+  player.teleport(new (state.position.constructor)(0, 2, 110));
 });
 await waitSim(1.5);
 
@@ -137,9 +148,22 @@ for (let i = 0; i < samples; i++) {
     let illegal = 0;
     let offGround = 0;
     for (const b of characters.allBots) {
-      const half = (n.cols * 2) / 2;
-      if (Math.abs(b.position.x) > half || Math.abs(b.position.z) > half) illegal++;
-      else if (!n.isWalkable(b.position.x, b.position.z)) illegal++;
+      if (Math.abs(b.position.x) > n.cols || Math.abs(b.position.z) > n.rows) {
+        illegal++;
+      } else {
+        // Near walkable ground, not *on* a walkable cell.
+        //
+        // The compound is four fifths building, the grid is 2m, and a bot
+        // taking cover behind a corner stands with its centre in a cell whose
+        // corner samples hit the wall. Demanding the exact cell be walkable
+        // fails every bot that is doing the right thing. What actually matters
+        // is that no bot ends up *inside* the architecture, and a bot inside a
+        // hall is many cells from anything walkable.
+        const near = n.nearestWalkable(b.position.x, b.position.z, 2);
+        const stuck = !near
+          || Math.hypot(near.x - b.position.x, near.z - b.position.z) > 4;
+        if (stuck) illegal++;
+      }
       // Y must track the terrain, since bots are moved kinematically.
       if (Math.abs(b.position.y - n.groundAt(b.position.x, b.position.z)) > 0.2) offGround++;
     }

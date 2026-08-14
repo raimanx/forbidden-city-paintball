@@ -162,7 +162,11 @@ export function buildStructure(
   // The plinth oversails the walls but stops short of the eaves.
   const plinthHw = hw * 0.94;
   const plinthHd = hd * 0.94;
-  out.stone.box(cx, plinthY, cz, plinthHw, plinthHeight / 2, plinthHd, plinthColor);
+  // Gates get no plinth: they are pierced, and a plinth across the archway is a
+  // step you have to hop over to walk through your own gate.
+  if (s.kind !== 'gate') {
+    out.stone.box(cx, plinthY, cz, plinthHw, plinthHeight / 2, plinthHd, plinthColor);
+  }
 
   const baseY = top + plinthTop;
   const roofHeight = height * roofFraction(s.kind, s.roof);
@@ -173,7 +177,19 @@ export function buildStructure(
   const bodyHw = Math.max(hw - overhang, hw * 0.35);
   const bodyHd = Math.max(hd - overhang, hd * 0.35);
 
-  buildBody(s, cx, cz, bodyHw, bodyHd, baseY, bodyHeight, out);
+  // Gates are pierced; everything else is solid.
+  //
+  // A gate is a hole in a wall. Built solid — which is what a footprint alone
+  // says — the Gate of Supreme Harmony seals the great court off from the outer
+  // one, the Meridian Gate seals the whole compound, and a map with a wall
+  // round it and no way through becomes a box with the player inside it. The
+  // archways are what make the plan a route rather than a picture.
+  const gateColliders = s.kind === 'gate'
+    ? buildGateBody(s, cx, cz, bodyHw, bodyHd, baseY, bodyHeight, out)
+    : null;
+  if (!gateColliders) {
+    buildBody(s, cx, cz, bodyHw, bodyHd, baseY, bodyHeight, out);
+  }
 
   const eaveY = baseY + bodyHeight;
   if (s.roof === 'triple') {
@@ -230,10 +246,14 @@ export function buildStructure(
       bodyHw, bodyHd);
   }
 
-  // One collider for the body, one for the plinth step. The roof is not a
-  // collider: it overhangs by up to 2.4m, and a box around it would be an
-  // invisible ceiling you bounce paint off two metres from the wall.
-  return [
+  // One collider for the plinth step, and either one for a solid body or one
+  // per pier for a pierced gate. The roof is not a collider: it overhangs by up
+  // to 2.4m, and a box around it would be an invisible ceiling you bounce paint
+  // off two metres from the wall.
+  //
+  // A gate's plinth is left out entirely — it would be a step across the
+  // archway you have to hop over to walk through your own gate.
+  return gateColliders ?? [
     { cx, cy: plinthY, cz, hw: plinthHw, hh: plinthHeight / 2, hd: plinthHd },
     { cx, cy: baseY + bodyHeight / 2, cz, hw: bodyHw, hh: bodyHeight / 2, hd: bodyHd },
   ];
@@ -259,8 +279,10 @@ function buildBody(
   hw: number, hd: number,
   baseY: number, height: number,
   out: BuildTarget,
+  /** Set when the caller has already built the wall as piers around an arch. */
+  wallDrawn = false,
 ): void {
-  const grand = (s.kind === 'hall' || s.kind === 'gate') && hw > 6 && height > 4;
+  const grand = !wallDrawn && (s.kind === 'hall' || s.kind === 'gate') && hw > 6 && height > 4;
   /**
    * Whether this building gets its joinery.
    *
@@ -275,13 +297,15 @@ function buildBody(
   const ranked = s.kind === 'hall' || s.kind === 'gate' || s.kind === 'tower'
     || s.kind === 'kiosk' || hw > 9;
 
-  // Gates are pierced: a red wall with dark archways. Halls are colonnaded
-  // along their long side. Everything else is a plain wall.
-  out.timber.box(
-    cx, baseY + height / 2, cz, hw, height / 2, hd,
-    s.kind === 'gate' ? CITY_COLORS.redDeep : CITY_COLORS.red,
-    0.02,
-  );
+  // Halls are colonnaded along their long side; everything else is a plain
+  // wall. Gates have had theirs built already, as piers around the archways.
+  if (!wallDrawn) {
+    out.timber.box(
+      cx, baseY + height / 2, cz, hw, height / 2, hd,
+      s.kind === 'gate' ? CITY_COLORS.redDeep : CITY_COLORS.red,
+      0.02,
+    );
+  }
 
   if (grand) {
     // A row of columns standing proud of the wall, under the eave. Eight-sided
@@ -351,7 +375,7 @@ function buildBody(
   // panels standing a little proud of the wall: at a distance the wall reads
   // as timber-framed rather than as one flat red slab, which is the single
   // thing that gives away a box pretending to be a building.
-  if (ranked && height > 3 && hw > 2.5) {
+  if (ranked && !wallDrawn && height > 3 && hw > 2.5) {
     const bays = clamp(Math.round(hw / 1.6), 3, 15);
     const bayW = (hw * 1.8) / bays;
     const doorH = height * 0.62;
@@ -385,6 +409,87 @@ function buildBody(
 }
 
 /**
+ * A gate: piers, archways, and a lintel across the top.
+ *
+ * The openings run through the *short* way — you walk across a gate's width,
+ * not along it — so a gate 72m wide and 53m deep is pierced north to south with
+ * its archways spaced along its width. Three of them on the great gates, one on
+ * the small ones, which is close enough to a hierarchy that runs from the
+ * Meridian Gate's five down to a single door.
+ *
+ * Returns the piers as colliders, and the lintel above the arches, so a
+ * paintball fired through an archway goes through and one fired at the wall
+ * beside it does not.
+ */
+function buildGateBody(
+  s: Structure,
+  cx: number, cz: number,
+  hw: number, hd: number,
+  baseY: number, height: number,
+  out: BuildTarget,
+): BoxCollider[] {
+  const alongX = hw >= hd;
+  const span = alongX ? hw : hd;
+  const thickness = alongX ? hd : hw;
+  const count = span > 13 ? 3 : 1;
+  const openHalf = Math.min(2.3, span / (count * 3.4));
+  const openTop = Math.min(height * 0.78, 5.4);
+
+  // Centres of the archways, spread across the span.
+  const centres: number[] = [];
+  for (let i = 0; i < count; i++) {
+    centres.push(count === 1 ? 0 : ((i - (count - 1) / 2) * span) / count * 1.15);
+  }
+
+  // Piers: what is left of the span once the archways are cut out of it.
+  const cuts = centres.map((c) => [c - openHalf, c + openHalf] as const)
+    .sort((a, b) => a[0] - b[0]);
+  const piers: Array<[number, number]> = [];
+  let cursor = -span;
+  for (const [a, b] of cuts) {
+    if (a > cursor) piers.push([cursor, a]);
+    cursor = Math.max(cursor, b);
+  }
+  if (cursor < span) piers.push([cursor, span]);
+
+  const colliders: BoxCollider[] = [];
+  const place = (
+    along: number, alongHalf: number, y: number, halfHeight: number,
+  ): void => {
+    const px = alongX ? cx + along : cx;
+    const pz = alongX ? cz : cz + along;
+    const phw = alongX ? alongHalf : thickness;
+    const phd = alongX ? thickness : alongHalf;
+    out.timber.box(px, y, pz, phw, halfHeight, phd, CITY_COLORS.redDeep, 0.02);
+    colliders.push({ cx: px, cy: y, cz: pz, hw: phw, hh: halfHeight, hd: phd });
+  };
+
+  for (const [a, b] of piers) {
+    if (b - a < 0.2) continue;
+    place((a + b) / 2, (b - a) / 2, baseY + height / 2, height / 2);
+  }
+  // The lintel band over the archways, spanning the lot.
+  const lintelH = (height - openTop) / 2;
+  if (lintelH > 0.15) {
+    place(0, span, baseY + openTop + lintelH, lintelH);
+  }
+
+  // The dark recess of each archway, so an opening reads as a passage rather
+  // than as a gap between two walls.
+  for (const centre of centres) {
+    const ax = alongX ? cx + centre : cx;
+    const az = alongX ? cz : cz + centre;
+    const ahw = alongX ? openHalf : thickness * 0.96;
+    const ahd = alongX ? thickness * 0.96 : openHalf;
+    out.timber.box(ax, baseY + openTop - 0.12, az, ahw, 0.12, ahd, CITY_COLORS.timber);
+  }
+
+  // Everything above the wall — frieze, brackets — is the same as any building.
+  buildBody(s, cx, cz, hw, hd, baseY, height, out, true);
+  return colliders;
+}
+
+/**
  * A courtyard enclosure: four red walls around the traced outline.
  *
  * The survey gives these as closed ways — the outline of a courtyard, not a
@@ -410,13 +515,59 @@ function buildCourtWall(
   const half = 0.55;
   const colliders: BoxCollider[] = [];
 
-  const run = (rx: number, rz: number, rhw: number, rhd: number): void => {
+  /**
+   * Half-width of the doorway cut through the middle of a long run.
+   *
+   * Five metres of opening, which is wider than a doorway wants to look, and
+   * sized for the navgrid rather than for the eye: cells are 2m and each is
+   * probed at five points, so an opening much under this straddles two cells
+   * and both of them come back blocked. A door a bot cannot path through is the
+   * same as no door.
+   */
+  const DOOR = 2.6;
+
+  const segment = (rx: number, rz: number, rhw: number, rhd: number): void => {
     if (rhw < 0.2 || rhd < 0.2) return;
     const y = groundAt(rx, rz);
     out.timber.box(rx, y + height / 2, rz, rhw, height / 2, rhd, CITY_COLORS.red, 0.08);
     // The tiled coping, oversailing both faces.
     out.roof.box(rx, y + height + 0.14, rz, rhw + 0.2, 0.14, rhd + 0.2, CITY_COLORS.tile);
     colliders.push({ cx: rx, cy: y + height / 2, cz: rz, hw: rhw, hh: height / 2, hd: rhd });
+  };
+
+  /**
+   * One side of the enclosure, with a doorway through the middle of it.
+   *
+   * The doorway is not decoration. A courtyard wall traced as a closed outline
+   * and built as four unbroken runs is a sealed box, and the compound has a
+   * hundred and forty-five of them: whole quarters of the Inner Court came out
+   * as pockets no one could enter, the navgrid's flood fill pruned six thousand
+   * cells as unreachable, and the two bots that spawned inside the Six Palaces
+   * stood in the dark for the entire round.
+   *
+   * Short runs are left solid — a 4m return with a 3.4m hole in it is not a
+   * wall — which is also why this cuts every long side rather than only the
+   * south one: with only one opening per courtyard, a nested enclosure can
+   * still seal a pocket, and a wall with two doors is a great deal more
+   * faithful to the place than a wall with none.
+   */
+  const run = (rx: number, rz: number, rhw: number, rhd: number): void => {
+    const alongX = rhw > rhd;
+    const half = alongX ? rhw : rhd;
+    if (half < 5) {
+      segment(rx, rz, rhw, rhd);
+      return;
+    }
+    const wing = (half - DOOR) / 2;
+    for (const side of [-1, 1]) {
+      const offset = side * (DOOR + wing);
+      segment(
+        alongX ? rx + offset : rx,
+        alongX ? rz : rz + offset,
+        alongX ? wing : rhw,
+        alongX ? rhd : wing,
+      );
+    }
   };
 
   // North and south runs the full width; east and west between them.

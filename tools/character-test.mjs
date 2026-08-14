@@ -1,7 +1,7 @@
 /**
  * Headless character tests.
  *
- * Covers hit routing (person vs. park), the grace window, scoring, and that
+ * Covers hit routing (person vs. world), the grace window, scoring, and that
  * paint actually lands on a body. The grace-window check matters specifically:
  * it was being decremented on render-frame time rather than simulation time, so
  * it expired several times too fast on a slow machine.
@@ -129,7 +129,7 @@ const hullDrew = await page.evaluate(() => {
 });
 check('the hull is live in the scene', hullDrew);
 
-// --- Hit routing: person, not park -----------------------------------------
+// --- Hit routing: person, not architecture ---------------------------------
 // Bots wander, so rather than firing at a fixed coordinate, step up to whichever
 // bot is nearest and re-aim at its live chest position between bursts.
 const totalBotHits = () => page.evaluate(() =>
@@ -364,14 +364,18 @@ async function clearAndDiff() {
   return diffSnap();
 }
 
-// Facing the terrace across the plaza, which is the only backdrop on this map
-// made entirely of things that hold still: the fountain runs, the lake ripples
-// and every canopy sways, and all three land in a frame-to-frame difference as
-// noise. The camera sits behind the player, so this puts their back to it.
+// Standing in the great court with the Gate of Supreme Harmony behind the
+// player, which is the best still backdrop on this map: painted timber and
+// glazed tile, none of which moves. The old spot — the plaza in front of the
+// terrace — is now *inside* the great marble terrace, whose top is 3.7m up, so
+// a teleport to 1.5m there dropped the player through the world and every
+// frame-difference measurement in this file read as noise.
+//
+// The camera sits behind the player, so this puts their back to the gate.
 await page.evaluate(() => {
   const { player, state, characters } = window.__paintball;
   const V = state.position.constructor;
-  player.teleport(new V(0, 1.5, 10));
+  player.teleport(new V(0, 1.5, 110));
   state.yaw = Math.PI;
   // Looking down a little, so the shoulders and the top of the head are in
   // frame. A level camera cannot see the crown at all, and a splat there is
@@ -380,8 +384,8 @@ await page.evaluate(() => {
   state.pitch = 0.32;
   characters.playerCharacter.paint.clear();
 
-  // And the park to itself. Six bots wander this map with live triggers, and
-  // over the eight simulated seconds this sweep takes they will find the
+  // And the compound to itself. Eight bots wander this map with live triggers,
+  // and over the eight simulated seconds this sweep takes they will find the
   // player, shoot them, and flinch them mid-measurement. Sent to the far
   // corner rather than frozen: there is no freeze switch, and respawn() is
   // exactly the "put this bot somewhere and forget what it was doing" call.
@@ -422,14 +426,14 @@ const SPOTS = [
 await page.mouse.down({ button: 'right' });
 await waitSim(1.0);
 
-// The noise floor: one step of park animation with no paint involved at all.
+// The noise floor: one step of animation with no paint involved at all.
 await page.evaluate(() => window.__paintball.characters.playerCharacter.paint.clear());
 await waitSim(0.3);
 await snap();
 await stepOnce();
 const floor = await diffSnap();
 const threshold = Math.max(0.0028, floor * 3);
-check('a still frame of the park is nearly still',
+check('a still frame of the compound is nearly still',
       floor < 0.01, `${(floor * 100).toFixed(3)}% of frame moves per step`);
 
 const paintBySpot = [];

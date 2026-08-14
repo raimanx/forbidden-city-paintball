@@ -71,18 +71,25 @@ const ballistics = new BallisticsSystem(characterRegistry);
 const bots: BotSpec[] = useTestCourse
   ? []
   : [
-      { id: 'bot-a', position: new Vector3(-40, 0, 100), colorIndex: 1, personality: 0 },
-      { id: 'bot-b', position: new Vector3(46, 0, 96), colorIndex: 2, personality: 1 },
+      // Every one of these is a spot the plan says is clear of buildings by
+      // three metres. The navgrid snaps a spawn to the nearest walkable cell,
+      // but it only searches twelve rings — twenty-four metres — and in a
+      // compound that is four fifths building, a hint dropped inside a hall is
+      // a bot that stands in the dark for the whole round.
+      { id: 'bot-a', position: new Vector3(-32.5, 0, 100), colorIndex: 1, personality: 0 },
+      { id: 'bot-b', position: new Vector3(59.5, 0, 96), colorIndex: 2, personality: 1 },
       // The two flanking halls of the outer court.
-      { id: 'bot-c', position: new Vector3(-96, 0, 128), colorIndex: 3, personality: 2 },
-      { id: 'bot-d', position: new Vector3(86, 0, 121), colorIndex: 5, personality: 3 },
+      { id: 'bot-c', position: new Vector3(-72, 0, 128), colorIndex: 3, personality: 2 },
+      { id: 'bot-d', position: new Vector3(68, 0, 121), colorIndex: 5, personality: 3 },
       // Behind the terrace, at the Gate of Heavenly Purity.
-      { id: 'bot-e', position: new Vector3(-6, 0, -52), colorIndex: 6, personality: 2 },
+      { id: 'bot-e', position: new Vector3(-6, 0, -46), colorIndex: 6, personality: 2 },
       // The Six Eastern and Six Western Palaces — the close-quarters ground.
-      { id: 'bot-f', position: new Vector3(62, 0, -108), colorIndex: 7, personality: 1 },
-      { id: 'bot-g', position: new Vector3(-62, 0, -108), colorIndex: 0, personality: 0 },
-      // The Imperial Garden, at the north end of the axis.
-      { id: 'bot-h', position: new Vector3(10, 0, -168), colorIndex: 4, personality: 3 },
+      { id: 'bot-f', position: new Vector3(57.5, 0, -100), colorIndex: 7, personality: 1 },
+      { id: 'bot-g', position: new Vector3(-60, 0, -106), colorIndex: 0, personality: 0 },
+      // The Imperial Garden, at the north end of the axis. The garden is dense
+      // with rockery and cypress, so this one sits in the open ground in front
+      // of the Gate of Divine Might rather than in the planting.
+      { id: 'bot-h', position: new Vector3(1, 0, -201), colorIndex: 4, personality: 3 },
     ];
 // Paint is finite. One map for everybody, passed to whoever needs to answer
 // "can I fire?" synchronously — see MatchState's header.

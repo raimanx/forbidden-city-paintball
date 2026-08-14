@@ -113,7 +113,7 @@ await page.evaluate(() => {
 const PITCHES = [-0.35, -0.2, -0.08, 0.0, 0.05, 0.12, 0.25, 0.4];
 await page.evaluate(() => {
   const { player, state } = window.__paintball;
-  player.teleport(new (state.position.constructor)(0, 2, 20));
+  player.teleport(new (state.position.constructor)(0, 2, 120));
 });
 await waitSim(1.0);
 
@@ -201,7 +201,7 @@ await page.evaluate(() => {
   const { player, state } = window.__paintball;
   // South edge of the plaza looking north up the arcade: ~17m of clear ground,
   // which is where the drop is worth seeing.
-  player.teleport(new (state.position.constructor)(0, 2, 4));
+  player.teleport(new (state.position.constructor)(0, 2, 104));
   state.yaw = Math.PI;
   state.pitch = 0.02;
 });
@@ -264,7 +264,7 @@ const sky = await page.evaluate(() => {
   const { ballistics, game, state } = window.__paintball;
   const V = state.position.constructor;
   const out = ballistics.newPrediction();
-  // Straight up from high above the park: nothing to hit inside the budget.
+  // Straight up from high above the compound: nothing to hit inside the budget.
   const ok = ballistics.predict(game.physics, new V(0, 400, 0), new V(0, 1, 0), out);
   return { ok, hit: out.hit, points: out.pointCount };
 });
