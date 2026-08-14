@@ -123,8 +123,16 @@ export const MOAT = {
    */
   innerSouthZ: WALL.halfZ + WALL.thickness / 2 + planLength(112),
   width: planLength(52),
-  /** Water surface, below courtyard level. */
-  waterY: -1.1,
+  /**
+   * Water surface.
+   *
+   * Set below the road that rings the wall with enough freeboard that the
+   * road's camber and the ground noise cannot dip under it. The water is one
+   * plane across the whole map — the shader discards wherever the ground stands
+   * above it — so anything lower than this line anywhere is flooded, and the
+   * road is the tightest case.
+   */
+  waterY: -1.35,
   bedY: -3.4,
 } as const;
 
@@ -335,8 +343,14 @@ export function courtyardMask(x: number, z: number): number {
 
 /** Courtyard level. Everything inside the walls stands on this. */
 const COURT_Y = 0;
-/** The compound sits on a plinth above the ground outside its walls. */
-const OUTSIDE_Y = -1.4;
+/**
+ * The compound sits on a plinth above the ground outside its walls.
+ *
+ * Shallower than it looks like it should be, and deliberately: the moat's water
+ * plane is a single surface across the whole map, so every metre this drops is a
+ * metre of freeboard lost on the road that rings the wall.
+ */
+const OUTSIDE_Y = -0.8;
 
 /**
  * Ground height at a world position.
@@ -373,7 +387,7 @@ export function heightAt(x: number, z: number): number {
 
   // The road between wall and water, on a gentle camber toward the moat.
   const moatOut = outsideMoat(x, z);
-  h -= smoothstep(-planLength(30), 0, moatOut) * 0.35;
+  h -= smoothstep(-planLength(30), 0, moatOut) * 0.2;
 
   // Carve the moat. This overrides whatever the ground outside said.
   h = lerp(h, MOAT.bedY, moatMask(x, z));
@@ -497,9 +511,9 @@ const SCRATCH = new Color();
  * 金砖, "golden bricks", despite being grey — laid in courses and worn pale
  * along the lines everyone walks.
  */
-const BRICK_LIT = new Color(0xa9a49a);
-const BRICK_DEEP = new Color(0x6f6b64);
-const BRICK_WARM = new Color(0x9c8f7c);
+const BRICK_LIT = new Color(0xb3ada0);
+const BRICK_DEEP = new Color(0x67635c);
+const BRICK_WARM = new Color(0xa08f76);
 /** White marble: the terraces, the balustrades, the bridges. */
 const MARBLE = new Color(0xe4dfd2);
 const MARBLE_SHADE = new Color(0xc0b9a8);

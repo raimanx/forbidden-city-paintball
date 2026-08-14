@@ -90,6 +90,11 @@ function classify(tags, w, d) {
     return 'courtwall';
   }
   if (tags.historic === 'city_gate' || /Gate$/.test(en) || last === '门') return 'gate';
+  // A big unnamed footprint on the axis is not a hall — every hall that size has
+  // a name. It is the raised stone platform a group of halls stands on, traced
+  // as a building because that is the only tag OSM has for it. Built as a hall
+  // it becomes a red wall 60m long across the middle of the compound.
+  if (!zh && !en && area > 3000) return 'platform';
   if (last === '亭') return 'kiosk';
   if (last === '阁' || last === '楼' || /Pavillion|Pavilion|Belvedere|Tower/i.test(en)) return 'tower';
   if (last === '殿' || last === '宫' || /^Hall|^Palace/.test(en)) return 'hall';
@@ -103,6 +108,7 @@ function roofOf(kind, area, zh) {
   if (kind === 'kiosk') return 'pyramid';
   if (kind === 'tower') return 'double';
   if (kind === 'citywall' || kind === 'courtwall' || kind === 'water') return 'none';
+  if (kind === 'platform') return 'none';
   // Long low ranges of rooms carry a plain gable-hip however big they get —
   // 东长房 is 145m long and still a barracks.
   if (kind === 'range' || kind === 'gallery') return 'gable';
@@ -136,6 +142,7 @@ function heightOf(kind, area, zh) {
   switch (kind) {
     case 'citywall': return 9;
     case 'courtwall': return 3.4;
+    case 'platform': return 1.6;
     case 'water': return 0;
     case 'kiosk': return 8;
     case 'tower': return 18;
@@ -253,7 +260,10 @@ export type StructureKind =
   | 'kiosk'
   | 'range'
   | 'gallery'
-  | 'courtwall';
+  /** A courtyard enclosure, traced as a closed outline. Built as four runs. */
+  | 'courtwall'
+  /** A raised stone platform that a group of buildings stands on. */
+  | 'platform';
 
 /** Roof form. \`hip2\` is the double-eaved hip reserved for the first rank. */
 export type RoofForm = 'hip2' | 'hip' | 'gable' | 'pyramid' | 'double' | 'none';

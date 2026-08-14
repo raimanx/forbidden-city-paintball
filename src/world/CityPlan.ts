@@ -23,7 +23,10 @@ export type StructureKind =
   | 'kiosk'
   | 'range'
   | 'gallery'
-  | 'courtwall';
+  /** A courtyard enclosure, traced as a closed outline. Built as four runs. */
+  | 'courtwall'
+  /** A raised stone platform that a group of buildings stands on. */
+  | 'platform';
 
 /** Roof form. `hip2` is the double-eaved hip reserved for the first rank. */
 export type RoofForm = 'hip2' | 'hip' | 'gable' | 'pyramid' | 'double' | 'none';
@@ -355,7 +358,7 @@ export const STRUCTURES: readonly Structure[] = [
   { zh: "后殿", en: "", kind: 'hall', roof: 'hip', height: 11.9, x: -109.3, z: -382.7, w: 26.2, d: 12.9 },
   { zh: "", en: "", kind: 'gallery', roof: 'gable', height: 7, x: 330.9, z: -382.5, w: 10.7, d: 6.9 },
   { zh: "", en: "", kind: 'gallery', roof: 'gable', height: 7, x: 60.4, z: -381.8, w: 9.6, d: 12.5 },
-  { zh: "", en: "", kind: 'range', roof: 'gable', height: 8.5, x: -14.9, z: -381.7, w: 94.9, d: 72.3 },
+  { zh: "", en: "", kind: 'platform', roof: 'none', height: 1.6, x: -14.9, z: -381.7, w: 94.9, d: 72.3 },
   { zh: "体元殿", en: "", kind: 'hall', roof: 'hip', height: 11.8, x: -164.3, z: -380.6, w: 26, d: 12 },
   { zh: "", en: "", kind: 'gallery', roof: 'gable', height: 7, x: 348.7, z: -379.6, w: 10.6, d: 6.8 },
   { zh: "", en: "", kind: 'gallery', roof: 'gable', height: 7, x: 178.2, z: -379.5, w: 21.3, d: 7 },
@@ -425,7 +428,7 @@ export const STRUCTURES: readonly Structure[] = [
   { zh: "继德堂", en: "", kind: 'gallery', roof: 'gable', height: 7, x: 121.9, z: -331.4, w: 20, d: 10.4 },
   { zh: "", en: "", kind: 'courtwall', roof: 'none', height: 3.4, x: -110.3, z: -330.3, w: 55.3, d: 2.5 },
   { zh: "", en: "", kind: 'gallery', roof: 'gable', height: 7, x: 350.9, z: -330.1, w: 12.3, d: 9.3 },
-  { zh: "", en: "", kind: 'range', roof: 'gable', height: 8.5, x: -13.6, z: -329, w: 92.4, d: 39 },
+  { zh: "", en: "", kind: 'platform', roof: 'none', height: 1.6, x: -13.6, z: -329, w: 92.4, d: 39 },
   { zh: "钟表馆", en: "Clock and Watch Museum", kind: 'range', roof: 'gable', height: 8.5, x: 170.3, z: -327.3, w: 51.6, d: 20 }, // Clock and Watch Museum
   { zh: "", en: "", kind: 'gallery', roof: 'gable', height: 7, x: 334.1, z: -325.3, w: 13.1, d: 10.1 },
   { zh: "体顺堂", en: "", kind: 'gallery', roof: 'gable', height: 7, x: -99.7, z: -324.8, w: 16.9, d: 8.7 },
@@ -494,7 +497,7 @@ export const STRUCTURES: readonly Structure[] = [
   { zh: "", en: "", kind: 'gallery', roof: 'gable', height: 7, x: 254.9, z: -279.6, w: 27.3, d: 27.7 },
   { zh: "", en: "", kind: 'courtwall', roof: 'none', height: 3.4, x: 230, z: -279.1, w: 14.9, d: 28.4 },
   { zh: "", en: "", kind: 'gallery', roof: 'gable', height: 7, x: 64.5, z: -278.8, w: 10.7, d: 13.3 },
-  { zh: "", en: "", kind: 'range', roof: 'gable', height: 8.5, x: -298.9, z: -277.3, w: 50.8, d: 67.8 },
+  { zh: "", en: "", kind: 'platform', roof: 'none', height: 1.6, x: -298.9, z: -277.3, w: 50.8, d: 67.8 },
   { zh: "", en: "", kind: 'courtwall', roof: 'none', height: 3.4, x: -265.9, z: -276.9, w: 11, d: 8 },
   { zh: "", en: "", kind: 'gallery', roof: 'gable', height: 7, x: -146.9, z: -275.8, w: 21.1, d: 14.6 },
   { zh: "", en: "", kind: 'gallery', roof: 'gable', height: 7, x: -93.1, z: -275.5, w: 23.1, d: 11 },
@@ -586,7 +589,7 @@ export const STRUCTURES: readonly Structure[] = [
   { zh: "", en: "", kind: 'courtwall', roof: 'none', height: 3.4, x: 101.5, z: -186.1, w: 3.1, d: 26.5 },
   { zh: "慈宁门", en: "", kind: 'gate', roof: 'hip', height: 10.2, x: -229.1, z: -184.7, w: 25.3, d: 13.9 },
   { zh: "", en: "", kind: 'gallery', roof: 'gable', height: 7, x: -106.5, z: -184.7, w: 14.5, d: 6.7 },
-  { zh: "", en: "", kind: 'range', roof: 'gable', height: 8.5, x: -8, z: -183.2, w: 132.7, d: 50.4 },
+  { zh: "", en: "", kind: 'platform', roof: 'none', height: 1.6, x: -8, z: -183.2, w: 132.7, d: 50.4 },
   { zh: "", en: "", kind: 'gallery', roof: 'gable', height: 7, x: -295.3, z: -182.2, w: 38.8, d: 7.5 },
   { zh: "", en: "", kind: 'courtwall', roof: 'none', height: 3.4, x: -255.6, z: -179.5, w: 28.3, d: 2.5 },
   { zh: "", en: "", kind: 'courtwall', roof: 'none', height: 3.4, x: -107.5, z: -178.5, w: 12.7, d: 6 },
@@ -709,7 +712,7 @@ export const STRUCTURES: readonly Structure[] = [
   { zh: "", en: "", kind: 'gallery', roof: 'gable', height: 7, x: 214.6, z: -14, w: 16.1, d: 8.8 },
   { zh: "上驷院", en: "Upper Chariot Courtyard", kind: 'gallery', roof: 'gable', height: 7, x: 231.4, z: 7, w: 13.2, d: 22.1 }, // Upper Chariot Courtyard
   { zh: "左翼门", en: "", kind: 'gate', roof: 'hip', height: 12.6, x: 107.9, z: 11.8, w: 45, d: 32.1 },
-  { zh: "", en: "", kind: 'range', roof: 'gable', height: 8.5, x: -2, z: 13.7, w: 133.7, d: 80 },
+  { zh: "", en: "", kind: 'platform', roof: 'none', height: 1.6, x: -2, z: 13.7, w: 133.7, d: 80 },
   { zh: "", en: "", kind: 'gallery', roof: 'gable', height: 7, x: 207, z: 18.9, w: 19.1, d: 11.6 },
   { zh: "右翼门", en: "Gate of Right Wing", kind: 'gate', roof: 'hip', height: 12.5, x: -111, z: 19.6, w: 42.5, d: 33.4 }, // Gate of Right Wing
   { zh: "内务府", en: "", kind: 'range', roof: 'gable', height: 8.5, x: -165, z: 23.6, w: 33.7, d: 61.1 },

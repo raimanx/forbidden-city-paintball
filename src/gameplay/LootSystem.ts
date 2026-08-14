@@ -5,7 +5,7 @@ import { match as matchConfig, paintColors } from '../core/Config';
 import { Rng } from '../core/Random';
 import type { GameContext, System } from '../core/System';
 import { createCelMaterial } from '../render/CelMaterial';
-import { LOOT_SPOTS } from '../world/ParkLayout';
+import { LOOT_SPOTS } from '../world/CityLayout';
 import { grant, type MatchState } from './MatchState';
 import type { PlayerState } from './PlayerState';
 

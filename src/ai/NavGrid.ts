@@ -3,7 +3,7 @@ import { player as playerConfig } from '../core/Config';
 import { DEG2RAD } from '../core/MathUtils';
 import type { Rng } from '../core/Random';
 import type { PhysicsWorld } from '../physics/PhysicsWorld';
-import { PLAY_HALF, WATER_Y, heightAt, slopeAt } from '../world/ParkLayout';
+import { NAV_HALF_X, NAV_HALF_Z, WATER_Y, heightAt, slopeAt } from '../world/CityLayout';
 
 /** Cell size in metres. 2m is finer than a character is wide. */
 const CELL = 2;
@@ -31,21 +31,24 @@ interface Node {
 }
 
 /**
- * Walkability grid and pathfinding over the park.
+ * Walkability grid and pathfinding over the compound.
  *
  * A grid rather than a recast-style navmesh: the ground is already an
  * analytic heightfield, so sampling it into cells is exact and costs nothing,
  * and a proper navmesh would buy nothing at this scale. Obstacles are found by
  * querying the physics world at each cell, which means every collider the arena
- * places — trees, benches, the fountain, the terrace — blocks bots
- * automatically, with no separate obstacle list to keep in sync.
+ * places — all 798 buildings, the courtyard walls, the terrace facing — blocks
+ * bots automatically, with no separate obstacle list to keep in sync. On a map
+ * that is four fifths building by area, that property is doing most of the work.
  *
- * The grid covers the **play area only**, not the woodland belt. Two reasons.
- * Cost: the belt more than triples the map's footprint, and each cell costs
- * five shape queries against a world holding a thousand-odd tree colliders.
- * And intent: the belt is somewhere for the *player* to wander off to. Bots
- * that follow them in would turn a quiet corner of the map into the same fight
- * as the plaza, and bots that got lost in it would simply stop playing.
+ * Rectangular, not square: the Forbidden City is half again as long as it is
+ * wide, and a square grid would spend a third of its cells on ground that is
+ * outside the walls.
+ *
+ * The grid covers the **compound only**, not the road and moat outside it. Two
+ * reasons. Cost: each cell is five shape queries at boot. And intent: the ring
+ * road is somewhere for the *player* to slip away to, and bots that followed
+ * them out would be playing a different game from everyone else.
  */
 export class NavGrid {
   readonly cols: number;
@@ -59,8 +62,8 @@ export class NavGrid {
 
   constructor(physics: PhysicsWorld) {
     const startedAt = performance.now();
-    this.cols = Math.floor(PLAY_HALF * 2 / CELL);
-    this.rows = this.cols;
+    this.cols = Math.floor(NAV_HALF_X * 2 / CELL);
+    this.rows = Math.floor(NAV_HALF_Z * 2 / CELL);
     this.walkable = new Uint8Array(this.cols * this.rows);
     this.heights = new Float32Array(this.cols * this.rows);
 
@@ -198,15 +201,15 @@ export class NavGrid {
 
   private cellCenter(col: number, row: number): { x: number; z: number } {
     return {
-      x: -PLAY_HALF + (col + 0.5) * CELL,
-      z: -PLAY_HALF + (row + 0.5) * CELL,
+      x: -NAV_HALF_X + (col + 0.5) * CELL,
+      z: -NAV_HALF_Z + (row + 0.5) * CELL,
     };
   }
 
   private toCell(x: number, z: number): { col: number; row: number } {
     return {
-      col: Math.floor((x + PLAY_HALF) / CELL),
-      row: Math.floor((z + PLAY_HALF) / CELL),
+      col: Math.floor((x + NAV_HALF_X) / CELL),
+      row: Math.floor((z + NAV_HALF_Z) / CELL),
     };
   }
 

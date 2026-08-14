@@ -8,18 +8,22 @@ import {
 } from 'three';
 import { palette } from '../core/Config';
 import { NO_OUTLINE_LAYER } from '../render/NprPipeline';
-import { LAKE_BOUNDS, WATER_Y, heightAt } from './ParkLayout';
+import { GROUND_HALF_X, GROUND_HALF_Z, WATER_Y, heightAt } from './CityLayout';
 
 /**
- * Cells across the lake's bounding box.
+ * Cells across the map.
  *
- * The plane used to span the whole arena, which was affordable when the arena
- * was 130m and the lake filled a third of it. On a 336m map that wastes almost
- * every vertex on dry land, and the shoreline — the one part of this mesh
- * anyone looks at closely, because it carries the foam band — gets coarser the
- * bigger the map grows. Bounding it to the water fixes both.
+ * The city's water is a ring, not a pool: the moat runs round all four sides
+ * and the Golden Water River crosses the first courtyard, so there is no
+ * bounding box to fit that is smaller than the map. One plane over everything,
+ * with the shader discarding wherever the ground stands above the waterline, is
+ * both simpler and — because the moat is only 23m wide — no more expensive than
+ * four separately fitted strips would be.
+ *
+ * 144 cells puts about six vertices across the moat, which is enough for the
+ * depth ramp that drives the shore foam.
  */
-const CELLS = 96;
+const CELLS = 144;
 
 const VERTEX = /* glsl */ `
 attribute float aDepth;
@@ -98,11 +102,11 @@ void main() {
 `;
 
 /**
- * The Lake.
+ * The moat and the Golden Water River.
  *
  * Depth is baked per-vertex from the same `heightAt` the terrain uses, so the
- * shoreline is exactly where the ground crosses the waterline — no z-fighting
- * band, and foam lands in the right place for free.
+ * bank is exactly where the ground crosses the waterline — no z-fighting band,
+ * and foam lands in the right place for free.
  */
 export class Water {
   readonly mesh: Mesh;
@@ -117,8 +121,8 @@ export class Water {
     for (let iz = 0; iz <= CELLS; iz++) {
       for (let ix = 0; ix <= CELLS; ix++) {
         const i = iz * verts + ix;
-        const x = LAKE_BOUNDS.minX + (ix / CELLS) * (LAKE_BOUNDS.maxX - LAKE_BOUNDS.minX);
-        const z = LAKE_BOUNDS.minZ + (iz / CELLS) * (LAKE_BOUNDS.maxZ - LAKE_BOUNDS.minZ);
+        const x = -GROUND_HALF_X + (ix / CELLS) * GROUND_HALF_X * 2;
+        const z = -GROUND_HALF_Z + (iz / CELLS) * GROUND_HALF_Z * 2;
         positions[i * 3] = x;
         positions[i * 3 + 1] = WATER_Y;
         positions[i * 3 + 2] = z;

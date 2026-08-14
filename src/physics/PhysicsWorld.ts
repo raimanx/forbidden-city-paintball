@@ -142,6 +142,33 @@ export class PhysicsWorld {
   }
 
   /**
+   * Many static boxes on one rigid body.
+   *
+   * The city is 798 buildings and about 1,700 boxes. Giving each its own body,
+   * as `createStaticBox` does, means 1,700 bodies in the island manager and
+   * 1,700 transforms integrated on a step that will never move any of them.
+   * They are all static and all in world space, so one body at the origin can
+   * carry the lot with the position baked into each collider instead.
+   *
+   * Returns the colliders in the order given, so callers can map each back to
+   * the surface it belongs to.
+   */
+  createStaticBoxes(
+    boxes: ReadonlyArray<{
+      position: { x: number; y: number; z: number };
+      halfExtents: { x: number; y: number; z: number };
+    }>,
+  ): RapierNS.Collider[] {
+    const body = this.w.createRigidBody(this.api.RigidBodyDesc.fixed());
+    return boxes.map(({ position, halfExtents }) => {
+      const desc = this.api.ColliderDesc
+        .cuboid(halfExtents.x, halfExtents.y, halfExtents.z)
+        .setTranslation(position.x, position.y, position.z);
+      return this.w.createCollider(desc, body);
+    });
+  }
+
+  /**
    * Static upright cylinder, centred on `position`.
    *
    * Used for tree trunks. A trimesh of the branch geometry would be exact, but

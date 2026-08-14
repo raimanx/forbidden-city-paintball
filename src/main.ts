@@ -21,7 +21,8 @@ import { HudSystem } from './ui/HudSystem';
 import { PauseSystem } from './ui/PauseSystem';
 import { ResultsSystem } from './ui/ResultsSystem';
 import { TouchControlsSystem } from './ui/TouchControls';
-import { ParkArenaSystem } from './world/ParkArena';
+import { CityArenaSystem } from './world/CityArena';
+import { MeshBuilder } from './world/MeshBuilder';
 import { TestCourseSystem } from './world/TestCourse';
 
 const container = document.querySelector<HTMLDivElement>('#app');
@@ -41,11 +42,12 @@ const scene = new URLSearchParams(location.search).get('scene');
 const useTestCourse = scene === 'course';
 
 const game = new Game(container);
-// Park: south edge of the plaza, clear of the fountain basin (radius 6), and
-// far enough north that the trailing camera doesn't sit inside the arcade
-// undercroft at z=16. Course: the old open-ground spawn.
+// City: the great courtyard, a third of the way north from the Gate of Supreme
+// Harmony, off the axis so the opening shot of the map is the terrace and the
+// Hall of Supreme Harmony standing on it rather than the player's own back.
+// Course: the old open-ground spawn.
 const playerState = createPlayerState(
-  useTestCourse ? new Vector3(0, 2, 6) : new Vector3(0, 1.5, 10),
+  useTestCourse ? new Vector3(0, 2, 6) : new Vector3(9, 1.5, 116),
 );
 const surfaces = new SurfaceRegistry();
 // Generated once and shared: world paint, character paint and the lens splash
@@ -62,17 +64,25 @@ const ballistics = new BallisticsSystem(characterRegistry);
 // None on the test course: it is a controlled fixture that the movement,
 // ballistics and paint suites assert against by exact coordinate, and a bot
 // firing into it makes every one of those measurements non-deterministic.
+// Eight rather than the park's six: the compound is half again as long as the
+// park was and four fifths of it is building, so the same roster spread over it
+// would leave whole courts with nobody in them for a round at a time. One of
+// each personality, spread down the axis and out to both flanks.
 const bots: BotSpec[] = useTestCourse
   ? []
   : [
-      { id: 'bot-a', position: new Vector3(-16, 0, 4), colorIndex: 1, personality: 0 },
-      { id: 'bot-b', position: new Vector3(16, 0, 6), colorIndex: 2, personality: 1 },
-      { id: 'bot-c', position: new Vector3(4, 0, 42), colorIndex: 3, personality: 2 },
-      // Respread when the map grew: this one used to sit in the Ramble, which
-      // the enlarged Lake now covers.
-      { id: 'bot-d', position: new Vector3(-26, 0, -72), colorIndex: 5, personality: 3 },
-      { id: 'bot-e', position: new Vector3(44, 0, -10), colorIndex: 6, personality: 2 },
-      { id: 'bot-f', position: new Vector3(-34, 0, 40), colorIndex: 7, personality: 1 },
+      { id: 'bot-a', position: new Vector3(-40, 0, 100), colorIndex: 1, personality: 0 },
+      { id: 'bot-b', position: new Vector3(46, 0, 96), colorIndex: 2, personality: 1 },
+      // The two flanking halls of the outer court.
+      { id: 'bot-c', position: new Vector3(-96, 0, 128), colorIndex: 3, personality: 2 },
+      { id: 'bot-d', position: new Vector3(86, 0, 121), colorIndex: 5, personality: 3 },
+      // Behind the terrace, at the Gate of Heavenly Purity.
+      { id: 'bot-e', position: new Vector3(-6, 0, -52), colorIndex: 6, personality: 2 },
+      // The Six Eastern and Six Western Palaces — the close-quarters ground.
+      { id: 'bot-f', position: new Vector3(62, 0, -108), colorIndex: 7, personality: 1 },
+      { id: 'bot-g', position: new Vector3(-62, 0, -108), colorIndex: 0, personality: 0 },
+      // The Imperial Garden, at the north end of the axis.
+      { id: 'bot-h', position: new Vector3(10, 0, -168), colorIndex: 4, personality: 3 },
     ];
 // Paint is finite. One map for everybody, passed to whoever needs to answer
 // "can I fire?" synchronously — see MatchState's header.
@@ -116,7 +126,7 @@ const aim = new AimSolver();
 //   player writes renderPosition -> camera reads it and writes avatarOpacity
 //   -> avatar reads both.
 game
-  .add(useTestCourse ? new TestCourseSystem(surfaces) : new ParkArenaSystem(surfaces))
+  .add(useTestCourse ? new TestCourseSystem(surfaces) : new CityArenaSystem(surfaces))
   .add(player)
   .add(new CameraRig(playerState))
   .add(ballistics)
@@ -177,6 +187,13 @@ declare global {
       stepSim: (seconds: number) => number;
       bootTimings: () => Array<{ phase: string; ms: number }>;
       impacts: ImpactRecord[];
+      /**
+       * Exposed for `tools/geometry-test.mjs`, which builds a box and a prism
+       * and checks their faces point outward. Every wall in the city comes out
+       * of this class, and a winding mistake in it is invisible in a screenshot
+       * — it just makes the whole compound a shade too dark.
+       */
+      MeshBuilder: typeof MeshBuilder;
     };
   }
 }
@@ -217,6 +234,7 @@ window.__paintball = {
   stepSim: (seconds) => game.stepSim(seconds),
   bootTimings: () => game.bootTimings,
   impacts,
+  MeshBuilder,
 };
 
 game.events.on('load:progress', ({ phase, progress }) => {
