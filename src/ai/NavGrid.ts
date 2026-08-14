@@ -3,7 +3,7 @@ import { player as playerConfig } from '../core/Config';
 import { DEG2RAD } from '../core/MathUtils';
 import type { Rng } from '../core/Random';
 import type { PhysicsWorld } from '../physics/PhysicsWorld';
-import { NAV_HALF_X, NAV_HALF_Z, WATER_Y, heightAt, slopeAt } from '../world/CityLayout';
+import { FIELD, WATER_Y, heightAt, slopeAt } from '../world/CityLayout';
 
 /** Cell size in metres. 2m is finer than a character is wide. */
 const CELL = 2;
@@ -45,10 +45,11 @@ interface Node {
  * wide, and a square grid would spend a third of its cells on ground that is
  * outside the walls.
  *
- * The grid covers the **compound only**, not the road and moat outside it. Two
- * reasons. Cost: each cell is five shape queries at boot. And intent: the ring
- * road is somewhere for the *player* to slip away to, and bots that followed
- * them out would be playing a different game from everyone else.
+ * The grid covers the **field** — the netted central spine of the compound that
+ * a match is played in, not the whole walled city. Two reasons. Cost: each cell
+ * is five shape queries at boot, and the field is a third of the compound. And
+ * intent: the bots and the player are held to the same ground, so nobody spends
+ * a round hunting through galleries the other side cannot reach.
  */
 export class NavGrid {
   readonly cols: number;
@@ -62,8 +63,8 @@ export class NavGrid {
 
   constructor(physics: PhysicsWorld) {
     const startedAt = performance.now();
-    this.cols = Math.floor(NAV_HALF_X * 2 / CELL);
-    this.rows = Math.floor(NAV_HALF_Z * 2 / CELL);
+    this.cols = Math.floor((FIELD.maxX - FIELD.minX) / CELL);
+    this.rows = Math.floor((FIELD.maxZ - FIELD.minZ) / CELL);
     this.walkable = new Uint8Array(this.cols * this.rows);
     this.heights = new Float32Array(this.cols * this.rows);
 
@@ -201,15 +202,15 @@ export class NavGrid {
 
   private cellCenter(col: number, row: number): { x: number; z: number } {
     return {
-      x: -NAV_HALF_X + (col + 0.5) * CELL,
-      z: -NAV_HALF_Z + (row + 0.5) * CELL,
+      x: FIELD.minX + (col + 0.5) * CELL,
+      z: FIELD.minZ + (row + 0.5) * CELL,
     };
   }
 
   private toCell(x: number, z: number): { col: number; row: number } {
     return {
-      col: Math.floor((x + NAV_HALF_X) / CELL),
-      row: Math.floor((z + NAV_HALF_Z) / CELL),
+      col: Math.floor((x - FIELD.minX) / CELL),
+      row: Math.floor((z - FIELD.minZ) / CELL),
     };
   }
 

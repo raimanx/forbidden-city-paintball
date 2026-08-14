@@ -149,16 +149,45 @@ export const GROUND_HALF_X = MOAT_OUTER_X + planLength(60);
 export const GROUND_HALF_Z = MOAT_OUTER_SOUTH_Z + planLength(60);
 
 /**
- * Half-extents of the navgrid — the ground bots path over.
+ * The field: the part of the compound a match is actually played in.
  *
- * The compound only, not the moat road. Same reasoning the park used for its
- * woodland belt: the ring road is somewhere for the *player* to slip away to,
- * and a bot that wandered out there would be playing a different game from
- * everyone else. It also keeps the grid to 32,000 cells rather than 55,000, and
- * every cell costs five shape queries at boot.
+ * The whole walled compound is 331m by 425m — 140,000 square metres of
+ * courtyard, alley and gallery. Nine players in that is nobody in it: two
+ * minutes of walking between contacts, whole quarters that go a round without
+ * anyone in them, and a map that reads as a place to tour rather than a place to
+ * fight over. So the match is bounded to the central spine, and the rest of the
+ * palace is scenery you can see and shoot at but not walk into.
+ *
+ * 156m by 268m — 42,000 square metres, about 4,600 per player, which for
+ * ground this dense with walls and gates is a large woodsball field rather than
+ * a stadium. What it contains is the best of the compound and the whole of its
+ * composition:
+ *
+ * - the **Meridian Gate** across the south end, which is the boundary there;
+ * - the **outer court**, the Golden Water River and its five bridges;
+ * - the **Gate of Supreme Harmony** and the great court behind it;
+ * - the **great terrace** and the three great halls on it;
+ * - the flanking belvederes, galleries and side gates of both courts;
+ * - the **Gate of Heavenly Purity** across the north end, which is the boundary
+ *   there.
+ *
+ * The edges that are not architecture are netted — see `CityCourse.fieldEdge`.
+ * Everything here is in world metres.
  */
-export const NAV_HALF_X = INTERIOR.halfX;
-export const NAV_HALF_Z = INTERIOR.halfZ;
+export const FIELD = {
+  minX: -78,
+  maxX: 78,
+  /** The north face of the Gate of Heavenly Purity. */
+  minZ: -64,
+  /** The north face of the Meridian Gate. */
+  maxZ: 204,
+} as const;
+
+/** True inside the field, with an optional margin outside it. */
+export function inField(x: number, z: number, margin = 0): boolean {
+  return x > FIELD.minX - margin && x < FIELD.maxX + margin
+    && z > FIELD.minZ - margin && z < FIELD.maxZ + margin;
+}
 
 /**
  * The three-tiered marble terrace — 三台 — carrying the great halls.
@@ -231,22 +260,23 @@ export const JINGSHAN = {
  * would stall the "everyone is out of paint" rule.
  *
  * Each is still validated against the navgrid at spawn, so a spot that drifts
- * inside a building as the plan changes is skipped rather than quietly dropping
- * the crate somewhere unreachable.
+ * inside a building — or outside the field, now that the match is bounded to
+ * one — is skipped rather than quietly dropping the crate somewhere no one can
+ * reach.
  */
 export const LOOT_SPOTS: ReadonlyArray<{ x: number; z: number; where: string }> = [
-  { x: planX(-1), z: planZ(300), where: 'under the Meridian Gate, in the shadow of the arch' },
+  { x: planX(-1), z: planZ(290), where: 'under the Meridian Gate, in the shadow of the arch' },
   { x: planX(-120), z: planZ(250), where: 'the south-west corner of the outer court' },
-  { x: planX(150), z: planZ(190), where: 'behind the Hall of Literary Glory' },
-  { x: planX(-175), z: planZ(120), where: 'behind the Hall of Military Prowess' },
+  { x: planX(115), z: planZ(245), where: 'the south-east corner of the outer court' },
+  { x: planX(-140), z: planZ(190), where: 'the west colonnade of the outer court' },
+  { x: planX(150), z: planZ(190), where: 'the east colonnade, by the Gate of Blending Harmony' },
   { x: planX(103), z: planZ(30), where: 'the Belvedere of Embodying Benevolence, east colonnade' },
   { x: planX(-101), z: planZ(30), where: 'the Belvedere of Spreading Righteousness, west colonnade' },
+  { x: planX(-150), z: planZ(60), where: 'the west gallery of the great court' },
   { x: planX(0), z: planZ(-215), where: 'the north face of the great terrace' },
-  { x: planX(-90), z: planZ(-300), where: 'the alley behind the Six Western Palaces' },
-  { x: planX(95), z: planZ(-300), where: 'the alley behind the Six Eastern Palaces' },
-  { x: planX(40), z: planZ(-508), where: 'the Imperial Garden, by the Wanchun Pavilion' },
-  { x: planX(-60), z: planZ(-520), where: 'the Imperial Garden, west of the rockery' },
-  { x: planX(-150), z: planZ(-560), where: 'the north-west gallery, by the Gate of Divine Might' },
+  { x: planX(100), z: planZ(-60), where: 'the alley east of the great terrace' },
+  { x: planX(-105), z: planZ(-60), where: 'the alley west of the great terrace' },
+  { x: planX(60), z: planZ(-260), where: 'the court of the Gate of Heavenly Purity, east side' },
 ];
 
 // --- masks ------------------------------------------------------------------

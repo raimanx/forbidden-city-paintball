@@ -86,15 +86,18 @@ check('loads within budget', readyMs < 5000, `${readyMs}ms`);
 // the plan says is clear of buildings; anything that falls through the world
 // ends up far below, and anything unreachable never grounds.
 const probes = [
+  // Inside the field, which is where a match is played — see CityLayout.FIELD.
   ['great court', 0, 110], ['court of the Gate of Supreme Harmony', 0, 160],
-  ['on the great terrace', -0.8, 28.2], ['inner court', -3.7, -46.5],
-  ['Six Eastern Palaces', 62, -100], ['Six Western Palaces', -60.6, -106.6],
-  ['Imperial Garden', 34, -171], ['under the Meridian Gate', 0, 190],
+  ['on the great terrace', -0.8, 28.2], ['court of the Gate of Heavenly Purity', -3.7, -46.5],
+  ['outer court, west', -50, 190], ['outer court, east', 55, 190],
+  ['under the Meridian Gate', 0, 196],
   ['west flank', -72, 128], ['east flank', 68, 121],
-  ['north end of the axis', -2.3, -200.5], ['west wall walk', -150, 0],
-  // Outside the wall: the road that rings the moat, which a player who walks
-  // out through a gate ends up on.
-  ['moat road, west', -180, 0], ['moat road, north', 0, -226],
+  ['alley east of the terrace', 45, -18], ['alley west of the terrace', -47, -18],
+  // And outside it. Nobody plays here, but the scenery still has to have ground
+  // under it: a stray respawn or a spectator camera that falls through the world
+  // is the same bug wherever it happens.
+  ['Six Eastern Palaces', 62, -100], ['Imperial Garden', 34, -171],
+  ['moat road, west', -180, 0],
 ];
 let landed = 0;
 const failures = [];
@@ -151,6 +154,16 @@ check('the terrace facing cannot be walked up',
       atTheFacing.y < 2.0,
       `stopped at y=${atTheFacing.y.toFixed(2)}, z=${atTheFacing.z.toFixed(1)}`);
 
+// --- The dragon ramp is stone, not scenery ---------------------------------
+// 御路石 runs up the middle of the great staircase between its two flights, and
+// nobody has ever walked on it — it is carved. It was drawn and never collided,
+// so the one object standing in the middle of the biggest stair on the map was
+// something the player walked into and then stood inside.
+const intoTheRamp = await walkFrom(-1.8, 86, 0, 8.0);
+check('the carved ramp splits the terrace stairs',
+      intoTheRamp.y < 1.2,
+      `stopped at y=${intoTheRamp.y.toFixed(2)}, z=${intoTheRamp.z.toFixed(1)}`);
+
 // --- The gates are gates ---------------------------------------------------
 // A gate is a hole in a wall. Built from its footprint alone it is a solid
 // block, which seals the great court off from the outer one and turns the whole
@@ -161,12 +174,40 @@ check('the Gate of Supreme Harmony can be walked through',
       throughTaihemen.grounded && throughTaihemen.z < 128,
       `reached z=${throughTaihemen.z.toFixed(1)}`);
 
-// And the Meridian Gate leads out of the compound entirely, onto the road that
-// rings the moat.
-const throughWumen = await walkFrom(6, 200, Math.PI, 8.0);
-check('the Meridian Gate leads out of the compound',
-      throughWumen.grounded && throughWumen.z > 232,
-      `reached z=${throughWumen.z.toFixed(1)}`);
+// --- The field is closed ----------------------------------------------------
+// The match is bounded to the compound's central spine — the whole walled city
+// is 140,000 square metres and nine players in that is nobody in it. Two thirds
+// of the boundary is the palace itself; the rest is debris netting. Both have to
+// hold, and the check is the same one: sprint at it and see where you end up.
+const atTheGate = await walkFrom(6, 194, Math.PI, 8.0);
+check('the Meridian Gate closes the south end of the field',
+      atTheGate.grounded && atTheGate.z < 209,
+      `reached z=${atTheGate.z.toFixed(1)}`);
+
+const escapesField = [];
+for (const [name, x, z, yaw] of [
+  ['east', 60, 110, -Math.PI / 2], ['west', -60, 110, Math.PI / 2],
+  ['north', 0, -40, 0], ['south-west', -60, 180, Math.PI],
+]) {
+  await page.evaluate(({ x, z, yaw }) => {
+    const { player, state } = window.__paintball;
+    state.yaw = yaw;
+    player.teleport(new (state.position.constructor)(x, 2, z));
+  }, { x, z, yaw });
+  await waitSim(1.0);
+  await page.keyboard.down('w');
+  await page.keyboard.down('Shift');
+  await waitSim(9.0);
+  await page.keyboard.up('w');
+  await page.keyboard.up('Shift');
+  await waitSim(0.4);
+  const at = await read();
+  // A metre and a half of slack for the capsule resting against the netting.
+  const out = at.x > 79.5 || at.x < -79.5 || at.z > 205.5 || at.z < -65.5;
+  if (out) escapesField.push(`${name} -> (${at.x.toFixed(1)}, ${at.z.toFixed(1)})`);
+}
+check('the netting holds the player inside the field', escapesField.length === 0,
+      escapesField.length ? escapesField.join('; ') : 'no escapes');
 
 // --- Containment -----------------------------------------------------------
 // Sprint at each edge for long enough to cross the map, and confirm we are
@@ -235,6 +276,33 @@ if (tower) {
         `reached y=${onTop.y.toFixed(2)} at z=${onTop.z.toFixed(1)}`);
 }
 
+// --- The halls have insides -------------------------------------------------
+// Seven of the buildings near the field are hollow: walls with doorways through
+// them, a floor, a ceiling and a row of columns, rather than a solid block with
+// a roof on it. Getting in means climbing the plinth — 0.9m, twice what a
+// player can step onto — so the entrance steps are as much a part of this as the
+// doorway is, and both are checked by walking at one.
+// The Belvedere of Embodying Benevolence, on the east side of the great court.
+// Its doorways are on the bays either side of centre, which is where the steps
+// are: walking at the middle of a hall's front walks at the wall between two
+// doors.
+// Started close in, because the great court is furnished: a barricade or a
+// stack of drums dealt into the courtyard between here and the steps is cover
+// doing its job, and it would stop this walk for a reason that has nothing to
+// do with the doorway being open.
+const intoTheBelvedere = await walkFrom(42.6, 104.5, 0, 5.0);
+check('a hall can be walked into',
+      intoTheBelvedere.grounded && intoTheBelvedere.z < 100 && intoTheBelvedere.y > 0.7,
+      `ended at (${intoTheBelvedere.x.toFixed(1)}, ${intoTheBelvedere.y.toFixed(2)}, ` +
+      `${intoTheBelvedere.z.toFixed(1)})`);
+
+// And its side wall is a wall. An interior open on every side is a canopy, and
+// the thing that makes a hall worth being inside is that most of it stops paint.
+const intoTheSide = await walkFrom(46.3, 88, -Math.PI / 2, 4.0);
+check('a hall is walled at the sides',
+      intoTheSide.x < 55,
+      `reached x=${intoTheSide.x.toFixed(1)}`);
+
 // --- Paint sticks to the compound ------------------------------------------
 // Fired at the Gate of Supreme Harmony from the great court, which is one of
 // the merged district meshes rather than a prop — the case that would break if
@@ -253,6 +321,34 @@ await waitSim(1.6);
 const afterPaint = await page.evaluate(() => window.__paintball.paint.splatCount);
 check('paint sticks to arena geometry', afterPaint > beforePaint,
       `${beforePaint} -> ${afterPaint} splats`);
+
+// --- including the imperial way --------------------------------------------
+// The strip of pale stone down the axis is the longest, most-walked and
+// most-shot-at line on the map, and it stood 12cm proud of the brick with no
+// collider under it: balls went through it into the terrain, and a splat
+// projected onto ground 12cm below the strip is a splat hidden by the strip.
+// Fired straight down onto it, and the impact height is what says which of the
+// two was hit.
+await page.evaluate(() => {
+  const { player, state } = window.__paintball;
+  state.yaw = 0;
+  state.pitch = -1.25;
+  window.__paintball.impacts.length = 0;
+  player.teleport(new (state.position.constructor)(-1.8, 2, 100));
+});
+await waitSim(1.5);
+const beforeWay = await page.evaluate(() => window.__paintball.paint.placedCount);
+await page.mouse.down();
+await waitSim(0.2);
+await page.mouse.up();
+await waitSim(1.5);
+const way = await page.evaluate(() => ({
+  placed: window.__paintball.paint.placedCount,
+  hits: window.__paintball.impacts.map((i) => i.y),
+}));
+check('the imperial way takes paint',
+      way.placed > beforeWay && way.hits.some((y) => y > 0.08),
+      `${way.placed - beforeWay} splats, impacts at y=${way.hits.map((y) => y.toFixed(2)).join(', ')}`);
 
 // --- and it sticks to every surface, not most of them ----------------------
 // The compound's geometry is merged by material — tile, timber, stone — and its

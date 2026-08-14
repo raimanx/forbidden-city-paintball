@@ -97,3 +97,36 @@ no browser. Plan in `CLAUDE/PLAN_6.md`, consequences in `CLAUDE/NEXT_6.md`.
 Note for anyone re-running `tools/fetch-osm.mjs`: `src/world/CityPlan.ts` was
 regenerated this iteration and the survey had moved since the last pull. Run the
 structure suite straight afterwards.
+
+# Iteration 7 — the field
+
+The four items in `CLAUDE/FEEDBACK_6.md` are done.
+
+**The map is a third of the size it was.** Not by rebuilding the compound
+smaller — the survey is the survey — but by bounding the match to its central
+spine: 156m by 268m from the Meridian Gate to the Gate of Heavenly Purity,
+about 4,600 square metres a player instead of 15,500. Two thirds of that
+boundary is the palace's own gates and gallery walls; the rest is debris netting
+on scaffold posts, which is what anybody running a game in a hired space puts
+up. Everything that knows where the game happens — navgrid, spawns, loot, the
+paintball course — moved onto it, and the rest of the Forbidden City is now
+scenery you can see and shoot at but not walk into.
+
+**Seven buildings have insides.** The Hall of Supreme Harmony, the Hall of
+Preserving Harmony, both belvederes on the great court and three more: walls
+with doorways, a floor, a ceiling, columns, and stone steps up the plinth, which
+is 0.9m and twice what a player can climb. Plus a detail pass on everything
+inside the netting — barrel tile courses along the eaves, name boards over the
+doors, door studs, lattice mullions.
+
+**The two bugs were the same bug.** The imperial way and the dragon ramp up the
+terrace stairs were both drawn and never given colliders: the strip took no
+paint because balls went through it into the terrain, and the ramp was something
+you walked into and stood inside. Both now collide, both have tests.
+
+Plan in `CLAUDE/PLAN_7.md`, consequences in `CLAUDE/NEXT_7.md`. 197 checks
+across twelve suites pass; `npm run perf` is unchanged at 13.9ms worst median.
+
+The item that wants a human: the size and shape of the field itself. It is one
+constant — `CityLayout.FIELD` — and it was chosen by looking at the plan rather
+than by playing on it.

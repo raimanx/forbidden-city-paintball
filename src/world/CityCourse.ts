@@ -2,8 +2,8 @@ import { Color } from 'three';
 import type { Rng } from '../core/Random';
 import type { BoxCollider, BuildTarget, Surroundings } from './CityBuilding';
 import {
+  FIELD,
   IMPERIAL_WAY,
-  INTERIOR,
   heightAt,
   riverMask,
   terraceMask,
@@ -121,10 +121,16 @@ const ZONES: ReadonlyArray<{
     pieces: ['container', 'tower', 'barricade', 'spool'],
   },
   {
-    // The north end of the axis, in front of the Gate of Divine Might.
-    name: 'the north court',
-    minX: -42, maxX: 42, minZ: -214, maxZ: -196,
-    pieces: ['container', 'barricade', 'crates', 'drums'],
+    // The alleys either side of the great terrace, which are the only way from
+    // one end of the field to the other that does not cross a courtyard.
+    name: 'the terrace flanks',
+    minX: 34, maxX: 62, minZ: -20, maxZ: 40,
+    pieces: ['container', 'barricade', 'crates'],
+  },
+  {
+    name: 'the west terrace flank',
+    minX: -62, maxX: -34, minZ: -20, maxZ: 40,
+    pieces: ['tower', 'barricade', 'drums'],
   },
   {
     name: 'the east flank',
@@ -178,7 +184,10 @@ function isClear(
   placed: readonly CourseSite[],
 ): boolean {
   const margin = 1.2;
-  if (Math.abs(x) > INTERIOR.halfX - 6 || Math.abs(z) > INTERIOR.halfZ - 6) return false;
+  // Inside the field, and not against its netting: a container jammed into the
+  // boundary is cover from one side only and a place to get stuck on the other.
+  if (x < FIELD.minX + 5 || x > FIELD.maxX - 5) return false;
+  if (z < FIELD.minZ + 5 || z > FIELD.maxZ - 5) return false;
 
   // Flat ground only. The corners are sampled as well as the centre, so a piece
   // cannot straddle the terrace skirt with one end in the air.
@@ -213,6 +222,102 @@ function isClear(
     }
   }
   return true;
+}
+
+/** One span of the netting that closes the field, and where it goes. */
+export interface EdgeSpan {
+  cx: number;
+  cz: number;
+  /** Half-length along the run, and which way the run points. */
+  half: number;
+  alongX: boolean;
+  /** False where a building already closes the line and only the collider is
+   *  wanted — netting drawn inside a hall's wall is netting nobody sees. */
+  visible: boolean;
+}
+
+/** Height of the netting's collider. Taller than the netting, and on purpose:
+ *  see `fieldEdge`. */
+const EDGE_HEIGHT = 3.0;
+/** How far apart the posts stand, in metres. */
+const EDGE_SPAN = 6;
+
+/**
+ * Where the field ends.
+ *
+ * Two thirds of the boundary is the palace itself — the Meridian Gate closes the
+ * south, the Gate of Heavenly Purity the north, and a good deal of both flanks
+ * is gallery wall. What is left is open courtyard, and open courtyard needs
+ * something across it that says *the match ends here*.
+ *
+ * Debris netting on scaffold posts, with hazard tape above it. Which is what
+ * anybody who has ever run a game in a hired space actually puts up, and it is
+ * the one boundary that can be honest without being ugly: you can see the rest
+ * of the Forbidden City through it, shoot through it, and be in no doubt that
+ * the ground beyond is not yours.
+ *
+ * The collider is 3m and the netting is 2.4m. That gap is deliberate — a
+ * boundary you can vault is not a boundary — and it is the only place on the
+ * map where the collision is taller than the thing you can see. Anything less
+ * dishonest either has the player bouncing off thin air well short of a fence,
+ * or has them out of the field.
+ */
+export function fieldEdge(around: Surroundings): EdgeSpan[] {
+  const spans: EdgeSpan[] = [];
+
+  const run = (alongX: boolean, fixed: number, from: number, to: number): void => {
+    for (let at = from; at < to; at += EDGE_SPAN) {
+      const half = Math.min(EDGE_SPAN, to - at) / 2;
+      const mid = at + half;
+      const cx = alongX ? mid : fixed;
+      const cz = alongX ? fixed : mid;
+      // Inside a building, only the collider is wanted: the wall is the fence
+      // there, and netting drawn inside it is netting nobody will ever see.
+      const buried = around.solids.some(
+        (b) => Math.abs(b.cx - cx) < b.hw - 0.5 && Math.abs(b.cz - cz) < b.hd - 0.5,
+      );
+      spans.push({ cx, cz, half, alongX, visible: !buried });
+    }
+  };
+
+  run(true, FIELD.minZ, FIELD.minX, FIELD.maxX);
+  run(true, FIELD.maxZ, FIELD.minX, FIELD.maxX);
+  run(false, FIELD.minX, FIELD.minZ, FIELD.maxZ);
+  run(false, FIELD.maxX, FIELD.minZ, FIELD.maxZ);
+  return spans;
+}
+
+/** Builds one span of the field's edge, returning its collider. */
+export function buildFieldEdge(
+  span: EdgeSpan,
+  groundAt: (x: number, z: number) => number,
+  out: BuildTarget,
+): BoxCollider[] {
+  const y = groundAt(span.cx, span.cz);
+  const thickness = 0.08;
+  const hw = span.alongX ? span.half : thickness;
+  const hd = span.alongX ? thickness : span.half;
+
+  if (span.visible) {
+    // The netting itself: a skirt from ankle to chest, which is what stops the
+    // eye at the boundary from across a courtyard.
+    out.timber.box(span.cx, y + 0.72, span.cz, hw, 0.56, hd, COURSE_COLORS.hazard);
+    // Two runs of tape above it, and the posts they are strung between.
+    for (const railY of [1.72, 2.32]) {
+      out.timber.box(span.cx, y + railY, span.cz, hw, 0.05, hd,
+        railY > 2 ? COURSE_COLORS.hazard : COURSE_COLORS.ply);
+    }
+    for (const end of [-1, 1]) {
+      const px = span.alongX ? span.cx + end * span.half : span.cx;
+      const pz = span.alongX ? span.cz : span.cz + end * span.half;
+      out.timber.prism(px, pz, y, y + 2.45, 0.06, 6, COURSE_COLORS.steel);
+    }
+  }
+
+  return [{
+    cx: span.cx, cy: y + EDGE_HEIGHT / 2, cz: span.cz,
+    hw, hh: EDGE_HEIGHT / 2, hd, surface: 'timber',
+  }];
 }
 
 /** Builds one piece, returning its colliders. */

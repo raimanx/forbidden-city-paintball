@@ -18,9 +18,16 @@ import { shadowMapSize } from '../render/Renderer';
 import { Sky } from '../render/Sky';
 import { Backdrop } from './Backdrop';
 import { CITY_COLORS, buildStructure, surroundings, type BoxCollider } from './CityBuilding';
-import { buildCoursePiece, courseSites, type CourseSite } from './CityCourse';
+import {
+  buildCoursePiece,
+  buildFieldEdge,
+  courseSites,
+  fieldEdge,
+  type CourseSite,
+} from './CityCourse';
 import { CityProps } from './CityProps';
 import {
+  FIELD,
   GOLDEN_RIVER,
   GROUND_HALF_X,
   GROUND_HALF_Z,
@@ -251,6 +258,16 @@ export class CityArenaSystem implements System {
     // And the paintball course: the containers, towers and barricades somebody
     // trucked into the courtyards this morning. Placed against the same plan the
     // buildings came from, so nothing lands inside a hall.
+    // The netting that closes the field. Built before the course so a piece
+    // cannot be dealt into the same metre as a fence post.
+    for (const span of fieldEdge(around)) {
+      const key = districtOf(span.cx, span.cz);
+      for (const box of buildFieldEdge(span, heightAt, targetFor(key))) {
+        colliders.push(box);
+        colliderDistrict.push(key);
+      }
+    }
+
     this.course.push(...courseSites(ctx.rng, around));
     for (const site of this.course) {
       const key = districtOf(site.x, site.z);
@@ -264,7 +281,7 @@ export class CityArenaSystem implements System {
     // building list: they are the ground plan itself.
     this.buildWall(targetFor('wall'), colliders, colliderDistrict);
     this.buildTerrace(targetFor('terrace'), colliders, colliderDistrict);
-    this.buildImperialWay(targetFor('way'));
+    this.buildImperialWay(targetFor('way'), colliders, colliderDistrict);
     this.buildRiverBridges(targetFor('bridge'), colliders, colliderDistrict);
     this.buildContainment(colliders, colliderDistrict);
 
@@ -427,6 +444,11 @@ export class CityArenaSystem implements System {
     const centerZ = (TERRACE.northZ + TERRACE.southZ) / 2;
     const halfZ = (TERRACE.southZ - TERRACE.northZ) / 2;
     const stairHalfWidth = planLength(18);
+    // The stairs, and the carved ramp between their two flights, are centred on
+    // the imperial way rather than on the terrace: the way is the line the whole
+    // compound is composed about, and a staircase 1.8m off it is a staircase
+    // that misses.
+    const stairX = IMPERIAL_WAY.x;
 
     // Three tiers, each stepped back from the one below, each with a balustrade
     // course on top. This is the shape everybody knows from the photographs.
@@ -494,8 +516,8 @@ export class CityArenaSystem implements System {
       // The south rim is broken by the stairs; the rail either side of them
       // stops at the opening rather than running across it.
       rim('x', centerZ - hz, -hx, hx);
-      rim('x', centerZ + hz, -hx, -stairHalfWidth);
-      rim('x', centerZ + hz, stairHalfWidth, hx);
+      rim('x', centerZ + hz, -hx, stairX - stairHalfWidth);
+      rim('x', centerZ + hz, stairX + stairHalfWidth, hx);
       rim('z', -hx, centerZ - hz, centerZ + hz);
       rim('z', hx, centerZ - hz, centerZ + hz);
 
@@ -503,6 +525,7 @@ export class CityArenaSystem implements System {
 
     // The stairs up the south face, flanked by the carved dragon ramp that runs
     // between the two flights on the imperial axis.
+    //
     const steps = 14;
     const stepRise = TERRACE.height / steps;
     const stepRun = planLength(1.4);
@@ -514,19 +537,31 @@ export class CityArenaSystem implements System {
     for (let i = 0; i < steps; i++) {
       const y = stepRise * (i + 0.5);
       const z = z0 + stepRun * (steps - i - 0.5);
-      out.stone.box(0, y, z, stairHalfWidth, stepRise / 2, stepRun / 2, CITY_COLORS.marble);
+      out.stone.box(stairX, y, z, stairHalfWidth, stepRise / 2, stepRun / 2, CITY_COLORS.marble);
       colliders.push({
-        cx: 0, cy: y, cz: z,
+        cx: stairX, cy: y, cz: z,
         hw: stairHalfWidth, hh: stepRise / 2, hd: stepRun / 2, surface: 'stone',
       });
       keys.push('terrace');
     }
-    // 御路石: the ramp of carved stone up the middle, which nobody walks on.
+
+    // 御路石: the ramp of carved stone up the middle, which nobody walks on —
+    // and which, until now, nobody was stopped by either. It was drawn and left
+    // uncollided, so the one object standing in the middle of the great
+    // staircase was a slab the player walked straight into and stood inside.
+    const rampHalfWidth = planLength(3);
+    const rampHalfDepth = (stepRun * steps) / 2;
+    const rampZ = z0 + rampHalfDepth;
     out.stone.box(
-      IMPERIAL_WAY.x, TERRACE.height / 2, z0 + (stepRun * steps) / 2,
-      planLength(3), TERRACE.height / 2, (stepRun * steps) / 2,
+      stairX, TERRACE.height / 2, rampZ,
+      rampHalfWidth, TERRACE.height / 2, rampHalfDepth,
       CITY_COLORS.marbleShade,
     );
+    colliders.push({
+      cx: stairX, cy: TERRACE.height / 2, cz: rampZ,
+      hw: rampHalfWidth, hh: TERRACE.height / 2, hd: rampHalfDepth, surface: 'stone',
+    });
+    keys.push('terrace');
   }
 
   /**
@@ -604,8 +639,16 @@ export class CityArenaSystem implements System {
     }
   }
 
-  /** The imperial way: a strip of pale stone the length of the axis. */
-  private buildImperialWay(out: District): void {
+  /**
+   * The imperial way: a strip of pale stone the length of the axis.
+   *
+   * Collided as well as drawn, which it was not until now. It stands 12cm proud
+   * of the brick, so a ball fired at it passed through and hit the *terrain*
+   * underneath — and a splat projected onto ground 12cm below the strip is a
+   * splat hidden under the strip. The single most-walked, most-shot-at line on
+   * the map was the one thing on it that would not take paint.
+   */
+  private buildImperialWay(out: District, colliders: BoxCollider[], keys: string[]): void {
     const step = 14;
     for (let z = -INTERIOR.halfZ; z < INTERIOR.halfZ; z += step) {
       const y = heightAt(IMPERIAL_WAY.x, z + step / 2);
@@ -617,6 +660,12 @@ export class CityArenaSystem implements System {
         IMPERIAL_WAY.halfWidth, IMPERIAL_WAY.rise / 2, step / 2,
         CITY_COLORS.marbleShade,
       );
+      colliders.push({
+        cx: IMPERIAL_WAY.x, cy: y + IMPERIAL_WAY.rise / 2, cz: z + step / 2,
+        hw: IMPERIAL_WAY.halfWidth, hh: IMPERIAL_WAY.rise / 2, hd: step / 2,
+        surface: 'stone',
+      });
+      keys.push('way');
     }
   }
 
@@ -701,6 +750,8 @@ export const CITY_BOUNDS = {
   groundHalfX: GROUND_HALF_X,
   groundHalfZ: GROUND_HALF_Z,
   moatInnerX: MOAT.innerX,
+  /** The netted field a match is played in. */
+  field: FIELD,
 } as const;
 
 /** Kept for the arena test, which needs to know what a structure looks like. */

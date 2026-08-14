@@ -2,7 +2,7 @@ import { Color, Vector3 } from 'three';
 import { clamp, lerp } from '../core/MathUtils';
 import type { MeshBuilder } from './MeshBuilder';
 import { STRUCTURES, type RoofForm, type Structure } from './CityPlan';
-import { SCALE, WALL, onTheGreatTerrace, planLength, planX, planZ } from './CityLayout';
+import { SCALE, WALL, inField, onTheGreatTerrace, planLength, planX, planZ } from './CityLayout';
 
 /**
  * One building, generated from its footprint.
@@ -71,6 +71,28 @@ export const CITY_COLORS = {
    */
   lattice: new Color(0xc9a469),
 } as const;
+
+/**
+ * How far outside the field a building still gets the full treatment.
+ *
+ * The match is played in the central spine — see `CityLayout.FIELD` — and the
+ * other two thirds of the compound is scenery: seen from inside the netting,
+ * across a courtyard, at fifty metres and up. Three things are spent on
+ * proximity rather than on every one of the 783 structures:
+ *
+ * - **Joinery** — bracket courses, doors, lattice panels, painted friezes — is
+ *   most of the city's triangle count and none of it resolves past about 40m.
+ * - **Roof colliders**, which only matter where a ball can reach the roof.
+ * - **Colliders at all**, which only matter where a player or a ball can be.
+ *
+ * The margins are generous on purpose: a building just outside the netting is
+ * looked at closely and shot at often, and the moment a player notices the
+ * detail changing they cannot stop noticing it.
+ */
+const DETAIL_MARGIN = 28;
+const ROOF_COLLIDER_MARGIN = 45;
+/** Exported so `tools/structure-test.mjs` checks the same buildings this does. */
+export const COLLIDER_MARGIN = 85;
 
 /** Which merged mesh a piece of the city is drawn into. */
 export type Surface = 'roof' | 'timber' | 'stone';
@@ -212,11 +234,16 @@ export function buildStructure(
   const hd = planLength(s.d) / 2;
   const height = s.height * SCALE;
 
+  /** Whether anything can reach this structure — see COLLIDER_MARGIN. */
+  const reachable = inField(cx, cz, COLLIDER_MARGIN);
+
   if (s.kind === 'courtwall') {
-    return buildCourtWall(cx, cz, hw, hd, groundAt, out, around);
+    const boxes = buildCourtWall(cx, cz, hw, hd, groundAt, out, around);
+    return reachable ? boxes : [];
   }
   if (s.kind === 'platform') {
-    return buildPlatform(cx, cz, hw, hd, height, groundAt, out);
+    const boxes = buildPlatform(cx, cz, hw, hd, height, groundAt, out);
+    return reachable ? boxes : [];
   }
 
   // Level onto the highest ground under the footprint; the plinth reaches down
@@ -244,14 +271,6 @@ export function buildStructure(
   const plinthHeight = plinthTop + (top - bottom);
   const plinthY = top + plinthTop - plinthHeight / 2;
   const plinthColor = s.kind === 'hall' && s.w > 40 ? CITY_COLORS.marble : CITY_COLORS.stone;
-  // The plinth oversails the walls but stops short of the eaves.
-  const plinthHw = hw * 0.94;
-  const plinthHd = hd * 0.94;
-  // Gates get no plinth: they are pierced, and a plinth across the archway is a
-  // step you have to hop over to walk through your own gate.
-  if (s.kind !== 'gate') {
-    out.stone.box(cx, plinthY, cz, plinthHw, plinthHeight / 2, plinthHd, plinthColor);
-  }
 
   const baseY = top + plinthTop;
   const roofHeight = height * roofFraction(s.kind, s.roof);
@@ -261,6 +280,18 @@ export function buildStructure(
   const overhang = clamp(height * 0.13, 0.5, 2.4);
   const bodyHw = Math.max(hw - overhang, hw * 0.35);
   const bodyHd = Math.max(hd - overhang, hd * 0.35);
+
+  // The plinth oversails the walls but stops short of the eaves — and it has to
+  // *carry* them. At 94% of a small footprint it came out 15cm narrower than
+  // the wall standing on it, which leaves a hand's breadth of wall with nothing
+  // under it all the way round the building.
+  const plinthHw = Math.max(hw * 0.94, bodyHw + 0.2);
+  const plinthHd = Math.max(hd * 0.94, bodyHd + 0.2);
+  // Gates get no plinth: they are pierced, and a plinth across the archway is a
+  // step you have to hop over to walk through your own gate.
+  if (s.kind !== 'gate') {
+    out.stone.box(cx, plinthY, cz, plinthHw, plinthHeight / 2, plinthHd, plinthColor);
+  }
 
   // Gates are pierced; everything else is solid.
   //
@@ -272,8 +303,35 @@ export function buildStructure(
   const gateColliders = s.kind === 'gate'
     ? buildGateBody(s, cx, cz, bodyHw, bodyHd, baseY, bodyHeight, bottom, out)
     : null;
+
+  /**
+   * Whether this building is hollow — a shell you can walk into rather than a
+   * solid block with a roof on it.
+   *
+   * The compound is 783 structures and a player could not get inside one of
+   * them: every hall on the axis was a red box, and the only interior on the
+   * map was a shipping container somebody trucked in. A hall's whole
+   * architecture is an open colonnade in front of a hall you walk into, so it
+   * is also the truer building.
+   *
+   * Not all of them. It has to be a ranked building — a hall, a kiosk, a
+   * belvedere, one of the big ranges — near enough to the field to be entered,
+   * and big enough inside to turn round in once its walls are 0.3m thick.
+   */
+  const hollow = !gateColliders
+    && !onWall
+    && (s.kind === 'hall' || s.kind === 'kiosk' || s.kind === 'tower' || s.kind === 'range')
+    && bodyHw >= 4.5 && bodyHd >= 3.4 && bodyHeight >= 2.9
+    // Inside the netting, or close enough to it that a player can see in.
+    && inField(cx, cz, 12);
+
+  const shellColliders = hollow
+    ? buildHollowBody(cx, cz, bodyHw, bodyHd, baseY, bodyHeight, {
+        plinthHw, plinthHd, plinthTop, ground: top, out, around,
+      })
+    : null;
   if (!gateColliders) {
-    buildBody(s, cx, cz, bodyHw, bodyHd, baseY, bodyHeight, out);
+    buildBody(s, cx, cz, bodyHw, bodyHd, baseY, bodyHeight, out, Boolean(shellColliders));
   }
 
   const eaveY = baseY + bodyHeight;
@@ -283,7 +341,11 @@ export function buildStructure(
   // A player who climbs onto a building's own plinth can still bump the eave of
   // a low gallery, which is what would happen to them in Beijing. What this
   // line rules out is an invisible ceiling over ground anyone walks on.
-  const hullFloor = bottom + 1.95;
+  // Beyond the field a roof is scenery: nothing can reach it, so it gets no
+  // collider at all, which is what an infinite floor line means here.
+  const hullFloor = inField(cx, cz, ROOF_COLLIDER_MARGIN) ? bottom + 1.95 : Infinity;
+  /** Whether the roof gets its tile courses — see roofShell. */
+  const courses = inField(cx, cz, DETAIL_MARGIN);
   if (s.roof === 'triple') {
     // The corner towers, and nothing else on the map. Three tiers of eaves,
     // each storey set inside the one below, which is the shape everybody has
@@ -294,7 +356,7 @@ export function buildStructure(
     for (let tier = 0; tier < 3; tier++) {
       const tierRoofH = roofHeight * (tier === 2 ? 0.9 : 0.5);
       roofShell(out, cx, cz, tierHw, tierHd, y, tierRoofH, 'hip', roofColor(s),
-        hullFloor, tierHw * 0.8, tierHd * 0.8);
+        hullFloor, courses, tierHw * 0.8, tierHd * 0.8);
       if (tier === 2) break;
       const nextHw = tierHw * 0.76;
       const nextHd = tierHd * 0.76;
@@ -320,7 +382,7 @@ export function buildStructure(
     // brown apron rather than as gold.
     const lowerRoofH = roofHeight * 0.62;
     roofShell(out, cx, cz, hw, hd, eaveY, lowerRoofH, 'hip', roofColor(s),
-      hullFloor, bodyHw, bodyHd);
+      hullFloor, courses, bodyHw, bodyHd);
 
     // The upper storey stands inside the lower roof's ridge line.
     const upperHw = Math.max(hw - lowerRoofH * 0.62, hw * 0.5);
@@ -331,11 +393,11 @@ export function buildStructure(
     roofShell(
       out, cx, cz, upperHw, upperHd,
       upperBase + upperBodyH, roofHeight * 0.8, 'hip', roofColor(s),
-      hullFloor, upperHw * 0.86, upperHd * 0.86,
+      hullFloor, courses, upperHw * 0.86, upperHd * 0.86,
     );
   } else {
     roofShell(out, cx, cz, hw, hd, eaveY, roofHeight, s.roof, roofColor(s),
-      hullFloor, bodyHw, bodyHd);
+      hullFloor, courses, bodyHw, bodyHd);
   }
 
   // One collider for the plinth step, and either one for a solid body or one
@@ -345,8 +407,19 @@ export function buildStructure(
   //
   // A gate's plinth is left out entirely — it would be a step across the
   // archway you have to hop over to walk through your own gate.
-  return gateColliders ?? [
-    { cx, cy: plinthY, cz, hw: plinthHw, hh: plinthHeight / 2, hd: plinthHd, surface: 'stone' },
+  // Nothing far outside the field is collided at all. A player cannot reach it,
+  // a ball cannot carry to it, and the compound's outer three quarters is 1,400
+  // boxes that exist only to be queried and never hit.
+  if (!reachable) return [];
+
+  if (gateColliders) return gateColliders;
+
+  const plinth: BoxCollider = {
+    cx, cy: plinthY, cz, hw: plinthHw, hh: plinthHeight / 2, hd: plinthHd, surface: 'stone',
+  };
+  if (shellColliders) return [plinth, ...shellColliders];
+  return [
+    plinth,
     {
       cx, cy: baseY + bodyHeight / 2, cz,
       hw: bodyHw, hh: bodyHeight / 2, hd: bodyHd, surface: 'timber',
@@ -389,8 +462,11 @@ function buildBody(
    * courtyard. The ranked buildings keep every detail; the galleries keep their
    * frieze, which is the only part of it visible from across a courtyard anyway.
    */
-  const ranked = s.kind === 'hall' || s.kind === 'gate' || s.kind === 'tower'
-    || s.kind === 'kiosk' || hw > 9;
+  const ranked = (s.kind === 'hall' || s.kind === 'gate' || s.kind === 'tower'
+    || s.kind === 'kiosk' || hw > 9)
+    // And near enough to the field to be looked at. Two thirds of the compound
+    // is now scenery beyond the netting — see DETAIL_MARGIN.
+    && inField(cx, cz, DETAIL_MARGIN);
 
   // Halls are colonnaded along their long side; everything else is a plain
   // wall. Gates have had theirs built already, as piers around the archways.
@@ -474,8 +550,14 @@ function buildBody(
     const bays = clamp(Math.round(hw / 1.6), 3, 15);
     const bayW = (hw * 1.8) / bays;
     const doorH = height * 0.62;
+    // Close in, the lattice gets its bars: 隔扇 is a timber grid over paper,
+    // and three mullions is the difference between a window and a beige
+    // rectangle. Only inside the field — past about forty metres they are two
+    // pixels apart and cost more than they show.
+    const close = inField(cx, cz, 6);
     for (let i = 0; i < bays; i++) {
       const x = cx - hw * 0.9 + bayW * (i + 0.5);
+      const lattice = i % 2 !== 0;
       for (const side of [-1, 1]) {
         // Alternating door and lattice panel. Both stand proud of the wall, so
         // each casts its own thin line of shadow and the facade gets the
@@ -483,8 +565,28 @@ function buildBody(
         out.timber.box(
           x, baseY + doorH / 2, cz + side * (hd + 0.05),
           bayW * 0.38, doorH / 2, 0.06,
-          i % 2 === 0 ? CITY_COLORS.redDeep : CITY_COLORS.lattice,
+          lattice ? CITY_COLORS.lattice : CITY_COLORS.redDeep,
         );
+        if (!close) continue;
+        if (lattice) {
+          for (const bar of [-0.5, 0, 0.5]) {
+            out.timber.box(
+              x + bar * bayW * 0.5, baseY + doorH / 2, cz + side * (hd + 0.09),
+              bayW * 0.045, doorH / 2, 0.04, CITY_COLORS.timber,
+            );
+          }
+          continue;
+        }
+        // 门钉 — the studs on a palace door, in two rows. Gold on cinnabar, and
+        // the one thing on a red wall that catches the sun.
+        for (const row of [0.36, 0.62]) {
+          for (const col of [-0.45, 0, 0.45]) {
+            out.timber.box(
+              x + col * bayW * 0.5, baseY + doorH * row, cz + side * (hd + 0.1),
+              bayW * 0.05, 0.05, 0.03, CITY_COLORS.ridge,
+            );
+          }
+        }
       }
     }
   }
@@ -501,6 +603,178 @@ function buildBody(
       );
     }
   }
+}
+
+/**
+ * A building with an inside.
+ *
+ * Four walls, a doorway or three through the front and one through the back, a
+ * ceiling, and a row of columns down the middle. Everything a player needs to
+ * be able to stand in a hall and shoot out of it — which no building in the
+ * compound could offer before, so the only interior on the map was a shipping
+ * container.
+ *
+ * The dimensions are the building's, not a room's. Doorways are 2.6m because
+ * that is roughly a bay of the real thing and because anything narrower than
+ * about three metres is a doorway the navgrid cannot see: cells are 2m and each
+ * is probed at five points. The ceiling matters more than it sounds — the roof
+ * above is a single-sided shell, so without one the view from inside a hall is
+ * of the sky through its own tiles.
+ */
+function buildHollowBody(
+  cx: number, cz: number,
+  hw: number, hd: number,
+  baseY: number, height: number,
+  plan: {
+    plinthHw: number; plinthHd: number; plinthTop: number;
+    /** The levelled ground the plinth stands on. */
+    ground: number;
+    out: BuildTarget;
+    /** The neighbours, so an entrance stair does not grow into one. */
+    around: Surroundings;
+  },
+): BoxCollider[] {
+  const { out } = plan;
+  const colliders: BoxCollider[] = [];
+  const thickness = 0.3;
+  const doorHalf = 1.3;
+  const doorTop = Math.min(height * 0.74, 2.7);
+
+  const wall = (
+    wx: number, wy: number, wz: number,
+    whw: number, whh: number, whd: number,
+    color: Color = CITY_COLORS.red,
+  ): void => {
+    out.timber.box(wx, wy, wz, whw, whh, whd, color, 0.02);
+    colliders.push({ cx: wx, cy: wy, cz: wz, hw: whw, hh: whh, hd: whd, surface: 'timber' });
+  };
+
+  /** Where the doors go along a face, as offsets from its centre. */
+  const doorCentres = (span: number, count: number): number[] => {
+    const centres: number[] = [];
+    for (let i = 0; i < count; i++) {
+      centres.push(count === 1 ? 0 : (((i + 0.5) / count) * 2 - 1) * (span - doorHalf - 0.6));
+    }
+    return centres;
+  };
+
+  /** One pierced face: piers between the doorways, and a lintel over them. */
+  const face = (alongX: boolean, side: -1 | 1, count: number): number[] => {
+    const span = alongX ? hw : hd;
+    const centres = doorCentres(span, count);
+    let spans: Array<[number, number]> = [[-span, span]];
+    for (const at of centres) spans = subtractSpan(spans, at - doorHalf, at + doorHalf);
+
+    const fixed = (alongX ? cz : cx) + side * ((alongX ? hd : hw) - thickness / 2);
+    for (const [a, b] of spans) {
+      if (b - a < 0.15) continue;
+      const mid = (a + b) / 2;
+      const half = (b - a) / 2;
+      wall(
+        alongX ? cx + mid : fixed,
+        baseY + height / 2,
+        alongX ? fixed : cz + mid,
+        alongX ? half : thickness / 2,
+        height / 2,
+        alongX ? thickness / 2 : half,
+      );
+    }
+    // The lintel across the doorways, which is what makes an opening a doorway
+    // rather than a gap between two walls.
+    const lintel = (height - doorTop) / 2;
+    if (lintel > 0.1) {
+      wall(
+        alongX ? cx : fixed,
+        baseY + doorTop + lintel,
+        alongX ? fixed : cz,
+        alongX ? span : thickness / 2,
+        lintel,
+        alongX ? thickness / 2 : span,
+      );
+    }
+    return centres;
+  };
+
+  // The front — the long south face, which is the one every hall in the
+  // compound is entered from — gets a doorway per bay. The back gets one, so a
+  // hall is a route rather than a dead end: a room with a single door is a room
+  // nobody who is being shot at will ever walk into.
+  const bays = clamp(Math.round(hw / 5), 1, 3);
+  const front = face(true, 1, bays);
+  face(true, -1, 1);
+  // The ends are closed.
+  for (const side of [-1, 1] as const) {
+    wall(
+      cx + side * (hw - thickness / 2), baseY + height / 2, cz,
+      thickness / 2, height / 2, Math.max(hd - thickness, 0.2),
+    );
+  }
+
+  // 匾额 — the name board over the central doorway, gold characters on a black
+  // lacquer ground with a gilt frame. Every hall in the compound has one, it is
+  // always in the same place, and at three boxes it is the cheapest thing in
+  // this file that says *palace* rather than *building*.
+  {
+    const boardHalf = Math.min(hw * 0.28, 1.5);
+    const boardY = baseY + Math.min(doorTop + 0.55, height - 0.35);
+    const boardZ = cz + hd - thickness * 0.4;
+    out.timber.box(cx, boardY, boardZ, boardHalf, 0.34, 0.06, CITY_COLORS.tileBlack);
+    out.timber.box(cx, boardY, boardZ + 0.02, boardHalf * 0.86, 0.22, 0.05, CITY_COLORS.ridge);
+  }
+
+  // The ceiling. Not a collider: nothing can get above it that is not already
+  // standing on the roof.
+  out.timber.box(cx, baseY + height - 0.09, cz, hw - thickness, 0.09, hd - thickness,
+    CITY_COLORS.timber);
+
+  // 金柱, the interior columns. Cover inside the hall, and the thing that stops
+  // an interior reading as a shed: a Chinese hall is a forest of columns.
+  const columns = clamp(Math.round(hw / 4), 2, 5);
+  for (let i = 0; i < columns; i++) {
+    const x = cx + (((i + 0.5) / columns) * 2 - 1) * (hw - 1.4);
+    for (const side of [-1, 1] as const) {
+      const z = cz + side * (hd - thickness) * 0.45;
+      out.timber.prism(x, z, baseY, baseY + height - 0.18, 0.24, 8, CITY_COLORS.red);
+      colliders.push({
+        cx: x, cy: baseY + height / 2, cz: z,
+        hw: 0.22, hh: height / 2, hd: 0.22, surface: 'timber',
+      });
+    }
+  }
+
+  // And the steps up to the doorways. A hall stands on a plinth 0.9m high,
+  // which is twice what a player can step onto: without these the interior is
+  // there and unreachable, which is worse than not having built it.
+  const rise = 0.3;
+  const treads = Math.max(1, Math.round(plan.plinthTop / rise));
+  const run = 0.42;
+  for (const at of front) {
+    // Not where the neighbour is standing. The Hall of Ancestral Worship has a
+    // gallery a metre and a half off its front, and a flight of steps laid
+    // without looking is a staircase growing out of somebody else's wall.
+    const blocked = plan.around.solids.some((b) => {
+      if (Math.abs(b.cx - cx) < b.hw && Math.abs(b.cz - cz) < b.hd) return false;
+      return Math.abs(b.cx - (cx + at)) < b.hw + doorHalf + 0.6
+        && Math.abs(b.cz - (cz + plan.plinthHd + run * treads * 0.5))
+           < b.hd + run * treads * 0.5;
+    });
+    if (blocked) continue;
+    for (let i = 0; i < treads; i++) {
+      // The tallest tread stands against the plinth; each one out from it is a
+      // step lower.
+      const top = (plan.plinthTop * (treads - i)) / treads;
+      const stepZ = cz + plan.plinthHd + run * (i + 0.5);
+      const stepH = plan.ground + top - (plan.ground - 0.05);
+      out.stone.box(cx + at, plan.ground + top - stepH / 2, stepZ,
+        doorHalf + 0.5, stepH / 2, run / 2, CITY_COLORS.stone);
+      colliders.push({
+        cx: cx + at, cy: plan.ground + top - stepH / 2, cz: stepZ,
+        hw: doorHalf + 0.5, hh: stepH / 2, hd: run / 2, surface: 'stone',
+      });
+    }
+  }
+
+  return colliders;
 }
 
 /**
@@ -888,6 +1162,8 @@ function roofShell(
    * and a roof entirely below it gets none.
    */
   hullFloor: number,
+  /** Whether the tile courses are drawn — see the ribs below. */
+  courses: boolean,
   /** Half-extents of the wall below, so the soffit is a frame and not a lid. */
   innerHw = hw * 0.72,
   innerHd = hd * 0.72,
@@ -999,6 +1275,35 @@ function roofShell(
     // by the gable panel below.
     out.quad(corner(b, 1, -1), corner(b, 1, 1), corner(a, 1, 1), corner(a, 1, -1), band);
     out.quad(corner(b, -1, 1), corner(b, -1, -1), corner(a, -1, -1), corner(a, -1, 1), band);
+
+    // 筒瓦 — the barrel tile courses, on the band of roof nearest the eave.
+    //
+    // A Chinese roof is not a gold plane, it is a comb: half-round tiles laid
+    // in ridges from ridge to eave, and the shadow between every pair is most of
+    // what makes the gold read as gold at any distance. Drawn as a raised rib
+    // per course, on the one band a player standing in the courtyard is looking
+    // at, and only on the buildings near enough for the ribs to be more than a
+    // pixel apart. A whole roof of them would be twenty times the triangles for
+    // detail nobody can see past the eave line.
+    if (i === 1 && courses && hw > 2) {
+      const step = 0.62;
+      const rib = 0.1;
+      const lift = 0.05;
+      for (const sz of [-1, 1] as const) {
+        const zA = cz + sz * a.halfD;
+        const zB = cz + sz * b.halfD;
+        for (let x = cx - a.halfW + step * 0.5; x < cx + a.halfW; x += step) {
+          const xB = clamp(x, cx - b.halfW, cx + b.halfW);
+          out.quad(
+            new Vector3(xB - rib, b.y + lift, zB),
+            new Vector3(xB + rib, b.y + lift, zB),
+            new Vector3(x + rib, a.y + lift, zA),
+            new Vector3(x - rib, a.y + lift, zA),
+            sz > 0 ? shade : color,
+          );
+        }
+      }
+    }
   }
 
   // 垂脊 — the hip ridges running from the ends of the main ridge down to the

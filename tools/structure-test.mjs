@@ -29,9 +29,10 @@ const server = await createServer({
 });
 
 const { STRUCTURES } = await server.ssrLoadModule('/src/world/CityPlan.ts');
-const { buildStructure, surroundings } = await server.ssrLoadModule('/src/world/CityBuilding.ts');
+const { COLLIDER_MARGIN, buildStructure, surroundings } =
+  await server.ssrLoadModule('/src/world/CityBuilding.ts');
 const { MeshBuilder } = await server.ssrLoadModule('/src/world/MeshBuilder.ts');
-const { heightAt, onTheGreatTerrace, planLength, planX, planZ } =
+const { heightAt, inField, onTheGreatTerrace, planLength, planX, planZ } =
   await server.ssrLoadModule('/src/world/CityLayout.ts');
 
 const results = [];
@@ -44,6 +45,17 @@ const named = (s) => s.zh || s.en || `${s.kind} at (${s.x}, ${s.z})`;
 
 /** Buildings proper: the kinds that are a solid you can walk into. */
 const SOLID = new Set(['hall', 'gate', 'tower', 'kiosk', 'range', 'gallery']);
+
+/**
+ * Whether anything can reach this structure.
+ *
+ * Two thirds of the compound is now outside the field a match is played in —
+ * see `CityLayout.FIELD` — and scenery well beyond the netting carries no
+ * colliders at all, deliberately. So the checks that are about *walking into*
+ * a building apply where a player can be, and the far city is checked only for
+ * the things that are true of it as a picture.
+ */
+const reachable = (entry) => inField(entry.cx, entry.cz, COLLIDER_MARGIN);
 
 // --- build the city, exactly as the arena does -----------------------------
 
@@ -183,30 +195,79 @@ check('no building stands inside another building', clashes.size === 0,
 // piers were built and whose colliders were not.
 
 const HEAD = 1.6;
+
+/**
+ * The height reached by the union of colliders standing over a point.
+ *
+ * The union, not any single box: a building is a plinth with a wall on top of
+ * it, and neither alone reaches from the pavement to head height. A centimetre
+ * of slack between one box and the next, because a plinth's top and the wall's
+ * foot are the same number arrived at by two different sums and they do not
+ * always land on the same float.
+ */
+function reachOver(entry, x, z, floor) {
+  const spans = entry.colliders
+    .filter((box) => Math.abs(box.cx - x) < box.hw && Math.abs(box.cz - z) < box.hd)
+    .map((box) => [box.cy - box.hh, box.cy + box.hh])
+    .sort((a, b) => a[0] - b[0]);
+  let reach = floor + 0.15;
+  for (const [low, high] of spans) {
+    if (low > reach + 0.01) break;
+    reach = Math.max(reach, high);
+  }
+  return reach;
+}
+
 const walkable = [];
 for (const entry of built) {
   if (!SOLID.has(entry.s.kind)) continue;
   // A gate is a hole by design and is answered by the next check instead.
   if (entry.s.kind === 'gate') continue;
+  if (!reachable(entry)) continue;
   // Measured from whatever the building stands on — the pavement, or the stone
   // base under the Inner Court's halls.
   const ground = platformUnder(entry) ?? heightAt(entry.cx, entry.cz);
-  // The union of what stands over this spot, not any single box: a building is
-  // a plinth with a wall on top of it, and neither alone reaches from the
-  // pavement to head height.
-  const spans = entry.colliders
-    .filter((box) => Math.abs(box.cx - entry.cx) < box.hw && Math.abs(box.cz - entry.cz) < box.hd)
-    .map((box) => [box.cy - box.hh, box.cy + box.hh])
-    .sort((a, b) => a[0] - b[0]);
-  // A centimetre of slack between one box and the next: a plinth's top and the
-  // wall's foot are the same number arrived at by two different sums, and they
-  // do not always land on the same float.
-  let reach = ground + 0.15;
-  for (const [low, high] of spans) {
-    if (low > reach + 0.01) break;
-    reach = Math.max(reach, high);
+
+  // Round the walls rather than through the middle. The halls near the field
+  // are hollow now — you can walk into them — so the centre of one is supposed
+  // to be air, and what has to be solid is the wall line.
+  //
+  // The wall line is read back off the colliders rather than recomputed from
+  // the footprint: the survey traces eaves, so a building's walls stand a metre
+  // or two inside its outline, and a test that sampled the outline would be
+  // asking whether the *air under the eaves* is solid.
+  const head = ground + HEAD;
+  const standing = entry.colliders.filter((b) => b.cy - b.hh <= head && b.cy + b.hh >= head);
+  if (standing.length === 0) {
+    walkable.push(`${named(entry.s)} (nothing at head height)`);
+    continue;
   }
-  if (reach < ground + HEAD) walkable.push(`${named(entry.s)} (to ${(reach - ground).toFixed(2)}m)`);
+  const wall = {
+    minX: Math.min(...standing.map((b) => b.cx - b.hw)),
+    maxX: Math.max(...standing.map((b) => b.cx + b.hw)),
+    minZ: Math.min(...standing.map((b) => b.cz - b.hd)),
+    maxZ: Math.max(...standing.map((b) => b.cz + b.hd)),
+  };
+  const inset = 0.16;
+  let solidPoints = 0;
+  let points = 0;
+  const sample = (x, z) => {
+    points++;
+    if (reachOver(entry, x, z, ground) >= head) solidPoints++;
+  };
+  for (let i = 0; i <= 4; i++) {
+    const tx = wall.minX + inset + ((wall.maxX - wall.minX - inset * 2) * i) / 4;
+    const tz = wall.minZ + inset + ((wall.maxZ - wall.minZ - inset * 2) * i) / 4;
+    sample(tx, wall.minZ + inset);
+    sample(tx, wall.maxZ - inset);
+    sample(wall.minX + inset, tz);
+    sample(wall.maxX - inset, tz);
+  }
+  // Three fifths, because a doorway is a hole in the wall line on purpose and a
+  // hall's front is mostly doorway.
+  if (solidPoints / points < 0.6) {
+    walkable.push(`${named(entry.s)} (${solidPoints}/${points} of its wall line)`);
+  }
 }
 check('every building is solid at head height', walkable.length === 0,
       walkable.length ? `${walkable.length}: ${walkable.slice(0, 6).join(', ')}` : 'all solid');
@@ -219,7 +280,7 @@ check('every building is solid at head height', walkable.length === 0,
 const sealed = [];
 const hollow = [];
 for (const entry of built) {
-  if (entry.s.kind !== 'gate') continue;
+  if (entry.s.kind !== 'gate' || !reachable(entry)) continue;
   const alongX = entry.hw >= entry.hd;
   const span = alongX ? entry.hw : entry.hd;
   const ground = heightAt(entry.cx, entry.cz);
@@ -252,6 +313,18 @@ check('every gate can be walked through', sealed.length === 0,
       sealed.length ? `${sealed.length} sealed: ${sealed.slice(0, 6).join(', ')}` : 'all pierced');
 check('every gate still has its piers', hollow.length === 0,
       hollow.length ? `${hollow.length} hollow: ${hollow.slice(0, 6).join(', ')}` : 'all standing');
+
+// --- and the far city costs nothing it does not have to ---------------------
+// The scenery beyond the netting is looked at and never touched, so it carries
+// no colliders. This is the other half of that bargain: if a structure inside
+// the field ever lost its colliders the check above would catch it, and if the
+// far city ever got them back, this one will.
+const nearby = built.filter(reachable);
+const farWithColliders = built.filter((e) => !reachable(e) && e.colliders.length > 0);
+check('only the reachable city is collided',
+      farWithColliders.length === 0 && nearby.length > 60,
+      `${nearby.length} of ${built.length} structures collided, ` +
+      `${farWithColliders.length} beyond reach`);
 
 await server.close();
 const failed = results.filter((r) => !r.pass);

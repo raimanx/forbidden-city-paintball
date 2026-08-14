@@ -87,11 +87,14 @@ const nav = await page.evaluate(() => {
 });
 const walkablePct = (100 * nav.walkable) / (nav.cols * nav.rows);
 check('navgrid builds quickly', nav.buildMs < 400, `${nav.buildMs.toFixed(0)}ms for ${nav.cols}x${nav.rows}`);
-// Under half, not over: the Forbidden City is mostly building. A grid that came
-// back 80% walkable would mean the physics queries had stopped finding the
-// architecture, which is exactly the failure that leaves bots walking through
-// walls.
-check('navgrid marks a sensible share walkable', walkablePct > 20 && walkablePct < 60,
+// Between a third and three quarters. The field is the compound's central
+// spine — courts, not quarters — so it is more open than the compound as a
+// whole was, and the old ceiling of 60% was a fact about the map rather than
+// about the navgrid. A grid that came back 90% walkable would mean the physics
+// queries had stopped finding the architecture, which is exactly the failure
+// that leaves bots walking through walls; one that came back 20% would mean
+// they had started finding it everywhere.
+check('navgrid marks a sensible share walkable', walkablePct > 30 && walkablePct < 75,
       `${walkablePct.toFixed(1)}% of cells`);
 check('the great court is walkable', nav.court === true);
 check('the great halls are not walkable', nav.hall === false);
@@ -148,22 +151,21 @@ for (let i = 0; i < samples; i++) {
     let illegal = 0;
     let offGround = 0;
     for (const b of characters.allBots) {
-      if (Math.abs(b.position.x) > n.cols || Math.abs(b.position.z) > n.rows) {
-        illegal++;
-      } else {
-        // Near walkable ground, not *on* a walkable cell.
-        //
-        // The compound is four fifths building, the grid is 2m, and a bot
-        // taking cover behind a corner stands with its centre in a cell whose
-        // corner samples hit the wall. Demanding the exact cell be walkable
-        // fails every bot that is doing the right thing. What actually matters
-        // is that no bot ends up *inside* the architecture, and a bot inside a
-        // hall is many cells from anything walkable.
-        const near = n.nearestWalkable(b.position.x, b.position.z, 2);
-        const stuck = !near
-          || Math.hypot(near.x - b.position.x, near.z - b.position.z) > 4;
-        if (stuck) illegal++;
-      }
+      // Near walkable ground, not *on* a walkable cell.
+      //
+      // The compound is four fifths building, the grid is 2m, and a bot taking
+      // cover behind a corner stands with its centre in a cell whose corner
+      // samples hit the wall. Demanding the exact cell be walkable fails every
+      // bot that is doing the right thing. What actually matters is that no bot
+      // ends up *inside* the architecture or outside the field, and either way
+      // it is many cells from anything walkable — which is also why this no
+      // longer tests the position against the grid's extents first. The field
+      // does not straddle the origin, and comparing a world coordinate against a
+      // cell count only ever worked because the old grid did.
+      const near = n.nearestWalkable(b.position.x, b.position.z, 2);
+      const stuck = !near
+        || Math.hypot(near.x - b.position.x, near.z - b.position.z) > 4;
+      if (stuck) illegal++;
       // Y must track the terrain, since bots are moved kinematically.
       if (Math.abs(b.position.y - n.groundAt(b.position.x, b.position.z)) > 0.2) offGround++;
     }

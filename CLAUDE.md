@@ -11,10 +11,12 @@ linework over Ghibli colour and light. Nobody dies; hits are counters.
 The arena is the Forbidden City, built from the survey: `tools/fetch-osm.mjs`
 pulls every building, courtyard wall and watercourse inside the moat from
 OpenStreetMap and writes `src/world/CityPlan.ts`, which is 780-odd structures at
-their true positions. `CityLayout.ts` owns the ground and the compression to
-play scale; `CityBuilding.ts` turns a footprint into a building; `CityCourse.ts`
-is the paintball kit somebody trucked into the courtyards; `CityArena.ts`
-assembles the lot. Central Park is gone.
+their true positions. `CityLayout.ts` owns the ground, the compression to
+play scale and `FIELD` — the netted central spine a match is played in, which is
+a third of the compound; `CityBuilding.ts` turns a footprint into a building;
+`CityCourse.ts` is the paintball kit somebody trucked into the courtyards, and
+the netting that closes the field; `CityArena.ts` assembles the lot. Central
+Park is gone.
 
 `npm run test:structures` is the cheap check on all of it — no browser, four
 seconds — and it is what to run after touching the plan or the generator.

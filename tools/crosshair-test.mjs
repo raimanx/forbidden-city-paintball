@@ -128,8 +128,11 @@ for (let i = 0; i < PITCHES.length; i++) {
   await page.mouse.down();
   await waitSim(0.1);
   await page.mouse.up();
-  // Long enough for the longest lob in the set to land.
-  await waitSim(2.2);
+  // Long enough for the longest lob in the set to land. Three and a half
+  // seconds, not two: the great court is furnished now — the paintball course
+  // puts containers and barricades in it — so a lob that used to stop on a wall
+  // at twenty metres can pass over one and run on to the far side of the field.
+  await waitSim(3.6);
   await page.evaluate(() => { window.__pairing.armed = false; });
 }
 
