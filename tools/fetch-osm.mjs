@@ -71,6 +71,24 @@ const SUPPLEMENT = [
     zh: '中和殿', en: 'Hall of Central Harmony', kind: 'hall', roof: 'pyramid',
     height: 19, x: -3, z: -100, w: 24.6, d: 24.6,
   },
+  // The four corner towers — 角楼 — which OSM does not carry either, and which
+  // are the single most photographed thing about the place: 27.5m, three tiers
+  // of eaves, a cross-shaped ridge and seventy-two of them in total. They stand
+  // *on* the wall at its four corners, so their positions are the wall
+  // rectangle's corners rather than anything the survey has to say.
+  //
+  // 480.5 and 376.5 are the wall's half-extents in real metres; the origin of
+  // these coordinates is the Hall of Supreme Harmony, 127m south of the
+  // compound's centre.
+  ...[
+    ['南东角楼', 'South-East Corner Tower', 376.5, 353.5],
+    ['南西角楼', 'South-West Corner Tower', -376.5, 353.5],
+    ['北东角楼', 'North-East Corner Tower', 376.5, -607.5],
+    ['北西角楼', 'North-West Corner Tower', -376.5, -607.5],
+  ].map(([zh, en, x, z]) => ({
+    zh, en, kind: 'tower', roof: 'triple', height: 27.5,
+    x, z, w: 24, d: 24,
+  })),
 ];
 
 /**
@@ -266,7 +284,15 @@ export type StructureKind =
   | 'platform';
 
 /** Roof form. \`hip2\` is the double-eaved hip reserved for the first rank. */
-export type RoofForm = 'hip2' | 'hip' | 'gable' | 'pyramid' | 'double' | 'none';
+export type RoofForm =
+  | 'hip2'
+  | 'hip'
+  | 'gable'
+  | 'pyramid'
+  | 'double'
+  /** Three tiers of eaves — the corner towers, and nothing else. */
+  | 'triple'
+  | 'none';
 
 export interface Structure {
   /** Chinese name, empty where OSM has none. */

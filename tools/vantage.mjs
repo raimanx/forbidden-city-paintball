@@ -48,13 +48,15 @@ const SHOTS = [
   ['03-on-the-terrace', -0.8, 28.2, 3.14, 0.02],
   ['04-inner-court', -3.7, -46.5, 0, 0.02],
   ['05-six-palaces', 62, -100, 1.57, 0.0],
-  ['06-garden', -5.8, -201.3, 3.14, 0.02],
+  ['06-garden', 34, -171, 3.14, 0.02],
   ['07-meridian-gate', 0, 190, 3.14, 0.16],
   ['08-west-flank', -72, 128, 1.57, 0.02],
   ['09-north-gate', -2.3, -200.5, 3.14, 0.05],
   ['10-wall-walk', -150, 0, 1.57, 0.03],
   ['11-terrace-from-court', 0, 110, 3.14, 0.10],
   ['12-east-flank', 68, 121, -1.57, 0.02],
+  ['13-jingshan-over-the-wall', 0, -60, 3.14, 0.14],
+  ['14-moat-north', 0, -240, 3.14, 0.10],
 ];
 
 for (const [name, x, z, yaw, pitch] of SHOTS) {

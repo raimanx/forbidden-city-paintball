@@ -29,7 +29,15 @@ export type StructureKind =
   | 'platform';
 
 /** Roof form. `hip2` is the double-eaved hip reserved for the first rank. */
-export type RoofForm = 'hip2' | 'hip' | 'gable' | 'pyramid' | 'double' | 'none';
+export type RoofForm =
+  | 'hip2'
+  | 'hip'
+  | 'gable'
+  | 'pyramid'
+  | 'double'
+  /** Three tiers of eaves — the corner towers, and nothing else. */
+  | 'triple'
+  | 'none';
 
 export interface Structure {
   /** Chinese name, empty where OSM has none. */
@@ -51,6 +59,8 @@ export interface Structure {
 }
 
 export const STRUCTURES: readonly Structure[] = [
+  { zh: "北西角楼", en: "North-West Corner Tower", kind: 'tower', roof: 'triple', height: 27.5, x: -376.5, z: -607.5, w: 24, d: 24 }, // North-West Corner Tower
+  { zh: "北东角楼", en: "North-East Corner Tower", kind: 'tower', roof: 'triple', height: 27.5, x: 376.5, z: -607.5, w: 24, d: 24 }, // North-East Corner Tower
   { zh: "房子22", en: "", kind: 'gallery', roof: 'gable', height: 7, x: 91, z: -599.1, w: 39.3, d: 8.9 },
   { zh: "", en: "", kind: 'gallery', roof: 'gable', height: 7, x: 53, z: -597.2, w: 12, d: 7.7 },
   { zh: "城墙6", en: "", kind: 'courtwall', roof: 'none', height: 3.4, x: -207.4, z: -596.1, w: 319.5, d: 23 },
@@ -841,6 +851,8 @@ export const STRUCTURES: readonly Structure[] = [
   { zh: "", en: "", kind: 'gallery', roof: 'gable', height: 7, x: -130.5, z: 343.2, w: 22.9, d: 17.1 },
   { zh: "", en: "", kind: 'gallery', roof: 'gable', height: 7, x: -181.8, z: 348.7, w: 56.9, d: 8.1 },
   { zh: "", en: "", kind: 'gallery', roof: 'gable', height: 7, x: -248.4, z: 350.9, w: 70.3, d: 8 },
+  { zh: "南西角楼", en: "South-West Corner Tower", kind: 'tower', roof: 'triple', height: 27.5, x: -376.5, z: 353.5, w: 24, d: 24 }, // South-West Corner Tower
+  { zh: "南东角楼", en: "South-East Corner Tower", kind: 'tower', roof: 'triple', height: 27.5, x: 376.5, z: 353.5, w: 24, d: 24 }, // South-East Corner Tower
   { zh: "", en: "", kind: 'gallery', roof: 'gable', height: 7, x: 37.7, z: 359.8, w: 11.8, d: 6.2 },
   { zh: "城墙7", en: "", kind: 'courtwall', roof: 'none', height: 3.4, x: -206.6, z: 361.7, w: 252.8, d: 18 },
   { zh: "", en: "", kind: 'gallery', roof: 'gable', height: 7, x: -12.1, z: 361.9, w: 12.1, d: 5.7 },

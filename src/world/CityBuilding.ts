@@ -2,7 +2,7 @@ import { Color, Vector3 } from 'three';
 import { clamp, lerp } from '../core/MathUtils';
 import type { MeshBuilder } from './MeshBuilder';
 import type { RoofForm, Structure } from './CityPlan';
-import { SCALE, planLength, planX, planZ } from './CityLayout';
+import { SCALE, WALL, planLength, planX, planZ } from './CityLayout';
 
 /**
  * One building, generated from its footprint.
@@ -143,7 +143,12 @@ export function buildStructure(
     groundAt(cx - hw, cz - hd), groundAt(cx + hw, cz - hd),
     groundAt(cx - hw, cz + hd), groundAt(cx + hw, cz + hd),
   ];
-  const top = Math.max(...corners);
+  // The corner towers stand *on* the wall at its four corners, not beside it,
+  // so they are levelled onto the wall's head rather than onto the ground the
+  // wall stands on. Everything else takes the highest ground under its own
+  // footprint.
+  const onWall = s.kind === 'tower' && s.roof === 'triple';
+  const top = onWall ? WALL.height : Math.max(...corners);
   const bottom = Math.min(...corners);
 
   const grand = s.kind === 'hall' || s.kind === 'gate' || s.kind === 'tower';
@@ -171,7 +176,28 @@ export function buildStructure(
   buildBody(s, cx, cz, bodyHw, bodyHd, baseY, bodyHeight, out);
 
   const eaveY = baseY + bodyHeight;
-  if (s.roof === 'hip2' || s.roof === 'double') {
+  if (s.roof === 'triple') {
+    // The corner towers, and nothing else on the map. Three tiers of eaves,
+    // each storey set inside the one below, which is the shape everybody has
+    // seen reflected in the moat even if they have never heard the name.
+    let y = eaveY;
+    let tierHw = hw;
+    let tierHd = hd;
+    for (let tier = 0; tier < 3; tier++) {
+      const tierRoofH = roofHeight * (tier === 2 ? 0.9 : 0.5);
+      roofShell(out.roof, cx, cz, tierHw, tierHd, y, tierRoofH, 'hip', roofColor(s),
+        tierHw * 0.8, tierHd * 0.8);
+      if (tier === 2) break;
+      const nextHw = tierHw * 0.76;
+      const nextHd = tierHd * 0.76;
+      const storey = Math.max(bodyHeight * 0.42, 1.2);
+      const storeyBase = y + tierRoofH * 0.6;
+      buildBody(s, cx, cz, nextHw * 0.86, nextHd * 0.86, storeyBase, storey, out);
+      y = storeyBase + storey;
+      tierHw = nextHw;
+      tierHd = nextHd;
+    }
+  } else if (s.roof === 'hip2' || s.roof === 'double') {
     // 重檐 — the double eave, and the mark of the very top of the hierarchy.
     //
     // Two roofs and *two storeys*, not one wall with a skirt halfway up it. The
@@ -235,6 +261,19 @@ function buildBody(
   out: BuildTarget,
 ): void {
   const grand = (s.kind === 'hall' || s.kind === 'gate') && hw > 6 && height > 4;
+  /**
+   * Whether this building gets its joinery.
+   *
+   * The compound is 486 galleries and 21 ranges — long low buildings that form
+   * the *walls* of the courtyards — and 90-odd halls, gates and towers that are
+   * meant to be looked at. Giving all of them brackets, doors and painted panels
+   * put 800,000 triangles in frame from the north end of the axis, four fifths
+   * of them on buildings whose entire job is to be a red line closing a
+   * courtyard. The ranked buildings keep every detail; the galleries keep their
+   * frieze, which is the only part of it visible from across a courtyard anyway.
+   */
+  const ranked = s.kind === 'hall' || s.kind === 'gate' || s.kind === 'tower'
+    || s.kind === 'kiosk' || hw > 9;
 
   // Gates are pierced: a red wall with dark archways. Halls are colonnaded
   // along their long side. Everything else is a plain wall.
@@ -266,7 +305,7 @@ function buildBody(
   // colour along its length so it reads as painted panels rather than a stripe.
   const friezeH = clamp(height * 0.1, 0.25, 0.9);
   const friezeY = baseY + height - friezeH / 2;
-  const panels = clamp(Math.round(hw / 2.2), 2, 14);
+  const panels = ranked ? clamp(Math.round(hw / 2.2), 2, 14) : 1;
   const panelW = (hw * 2) / panels;
   for (let i = 0; i < panels; i++) {
     const x = cx - hw + panelW * (i + 0.5);
@@ -283,7 +322,7 @@ function buildBody(
   // the frieze with a gold face. At any distance they read as the dense
   // corbelled band that no other architecture has; up close they are boxes,
   // which is exactly what the ink-line look wants.
-  if (hw > 3 && height > 3) {
+  if (ranked && hw > 3 && height > 3) {
     const bracketY = baseY + height + friezeH * 0.15;
     const bracketH = clamp(height * 0.035, 0.1, 0.26);
     // Close-spaced. A dougong course is dense — the blocks nearly touch — and
@@ -312,7 +351,7 @@ function buildBody(
   // panels standing a little proud of the wall: at a distance the wall reads
   // as timber-framed rather than as one flat red slab, which is the single
   // thing that gives away a box pretending to be a building.
-  if (height > 3 && hw > 2.5) {
+  if (ranked && height > 3 && hw > 2.5) {
     const bays = clamp(Math.round(hw / 1.6), 3, 15);
     const bayW = (hw * 1.8) / bays;
     const doorH = height * 0.62;
@@ -331,7 +370,7 @@ function buildBody(
     }
   }
 
-  const endPanels = clamp(Math.round(hd / 2.2), 1, 10);
+  const endPanels = ranked ? clamp(Math.round(hd / 2.2), 1, 10) : 1;
   const endPanelD = (hd * 2) / endPanels;
   for (let i = 0; i < endPanels; i++) {
     const z = cz - hd + endPanelD * (i + 0.5);

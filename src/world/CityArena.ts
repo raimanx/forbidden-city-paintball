@@ -16,7 +16,9 @@ import type { SurfaceRegistry } from '../paint/SurfaceRegistry';
 import { createCelMaterial } from '../render/CelMaterial';
 import { shadowMapSize } from '../render/Renderer';
 import { Sky } from '../render/Sky';
+import { Backdrop } from './Backdrop';
 import { CITY_COLORS, buildStructure, type BoxCollider } from './CityBuilding';
+import { CityProps } from './CityProps';
 import {
   GROUND_HALF_X,
   GROUND_HALF_Z,
@@ -100,6 +102,8 @@ export class CityArenaSystem implements System {
 
   private terrain?: Terrain;
   private water?: Water;
+  private backdrop?: Backdrop;
+  private props?: CityProps;
   private sky?: Sky;
   private sun?: DirectionalLight;
   private sunTarget?: Object3D;
@@ -133,6 +137,17 @@ export class CityArenaSystem implements System {
 
     ctx.events.emit('load:progress', { phase: 'the palace', progress: 0.5 });
     this.buildCompound(ctx);
+
+    // Beyond the moat: Jingshan on the axis, and the grey roofscape of the old
+    // city. Scenery only — no colliders, and the navgrid never sees it.
+    this.backdrop = new Backdrop(ctx.rng);
+    scene.add(this.backdrop.group);
+
+    // The furniture: vats, lions, the rockery. Authored in Blender, because
+    // unlike the buildings these repeat at a fixed size — see CityProps.
+    this.props = new CityProps();
+    await this.props.load(ctx, this.surfaces, ctx.rng);
+    scene.add(this.props.group);
 
     scene.add(this.group);
     ctx.events.emit('load:progress', { phase: 'the palace', progress: 0.8 });
@@ -207,6 +222,7 @@ export class CityArenaSystem implements System {
     this.buildWall(targetFor('wall'), colliders, colliderDistrict);
     this.buildTerrace(targetFor('terrace'), colliders, colliderDistrict);
     this.buildImperialWay(targetFor('way'));
+    this.buildContainment(colliders, colliderDistrict);
 
     // One mesh per district per material.
     let meshes = 0;
@@ -249,8 +265,16 @@ export class CityArenaSystem implements System {
       this.surfaces.register(collider.handle, { geometry: mesh.geometry, matrixWorld: identity });
     });
 
+    const triangles: Record<string, number> = {};
+    for (const [key, district] of districts) {
+      for (const surface of ['roof', 'timber', 'stone'] as Surface[]) {
+        triangles[surface] = (triangles[surface] ?? 0) + district[surface].triangleCount;
+      }
+      void key;
+    }
     console.info(
-      `city: ${STRUCTURES.length} structures, ${meshes} meshes, ${created.length} colliders`,
+      `city: ${STRUCTURES.length} structures, ${meshes} meshes, ${created.length} colliders, ` +
+      `triangles ${JSON.stringify(triangles)}`,
     );
   }
 
@@ -417,6 +441,39 @@ export class CityArenaSystem implements System {
     );
   }
 
+  /**
+   * The edge of the world, at the far bank of the moat.
+   *
+   * The compound has a wall and the wall has gates, so a player who walks out
+   * through one is meant to end up on the ring road — that is where the moat
+   * and the corner towers are best seen from, and it is the one part of the map
+   * that feels like standing outside the story. What they must not be able to do
+   * is keep going, into a roofscape with no ground under it.
+   *
+   * Invisible, unlike the park's, which used a visible stone lip: here there is
+   * already a moat between the player and this line, and drawing a wall in the
+   * water would be the only thing on the map that admits to being a game
+   * boundary.
+   */
+  private buildContainment(colliders: BoxCollider[], keys: string[]): void {
+    const edgeX = GROUND_HALF_X - 3;
+    const edgeZ = GROUND_HALF_Z - 3;
+    const height = 14;
+
+    for (const [sx, sz] of [[0, -1], [0, 1], [-1, 0], [1, 0]] as const) {
+      const horizontal = sz !== 0;
+      colliders.push({
+        cx: sx * edgeX,
+        cy: height / 2 - 4,
+        cz: sz * edgeZ,
+        hw: horizontal ? edgeX + 2 : 1,
+        hh: height / 2,
+        hd: horizontal ? 1 : edgeZ + 2,
+      });
+      keys.push('containment');
+    }
+  }
+
   /** The imperial way: a strip of pale stone the length of the axis. */
   private buildImperialWay(out: District): void {
     const step = 14;
@@ -456,6 +513,8 @@ export class CityArenaSystem implements System {
   dispose(): void {
     this.terrain?.dispose();
     this.water?.dispose();
+    this.backdrop?.dispose();
+    this.props?.dispose();
     this.sky?.dispose();
     for (const geometry of this.geometries) geometry.dispose();
     for (const item of this.disposables) item.dispose();
