@@ -39,62 +39,61 @@ const HEIGHT = 720 * SCALE;
  * The shot list.
  *
  * `settle` is simulated seconds to run before the frame is kept — long enough
- * for the drop to land and the spring arm to stop easing, and for the fountain
- * and canopies to be mid-animation rather than at their rest pose.
+ * for the drop to land and the spring arm to stop easing, and for the moat to
+ * be mid-ripple rather than at its rest pose.
  */
 const SHOTS = [
   {
-    // North of the arcade, not level with it. The spring arm sits 3.6m behind
-    // the player, so standing at z=14 to look at the fountain parks the camera
-    // at z≈17.5 — which is inside an arcade pier, and the shot came back half
-    // filled with grey stone.
-    name: '01-fountain-plaza',
-    caption: 'Bethesda-ish fountain from the plaza',
-    at: { x: 1, z: 10, yaw: 0.30, pitch: -0.02 },
+    // From the middle of the great court, looking north at the terrace with the
+    // Hall of Supreme Harmony standing on it. The postcard view of the place.
+    name: '01-great-court',
+    caption: 'The Hall of Supreme Harmony across the great court',
+    at: { x: 0, z: 110, yaw: 0.0, pitch: 0.02 },
     settle: 3.0,
   },
   {
-    name: '02-mall-allee',
-    caption: 'The Mall, under the elms',
-    at: { x: 0, z: 58, yaw: 0.02, pitch: 0.01 },
+    // Looking back south at the Gate of Supreme Harmony: three archways, a
+    // double eave, and the bracket course under it.
+    name: '02-gate-of-supreme-harmony',
+    caption: 'The Gate of Supreme Harmony',
+    at: { x: 0, z: 118, yaw: Math.PI, pitch: 0.08 },
     settle: 3.0,
   },
   {
-    name: '03-bow-bridge',
-    caption: 'Bow Bridge across the lake',
-    at: { x: -58, z: -14, yaw: -0.72, pitch: -0.05 },
+    name: '03-on-the-terrace',
+    caption: 'On the marble terrace, under the great hall',
+    at: { x: -0.8, z: 28.2, yaw: Math.PI, pitch: 0.02 },
     settle: 3.0,
   },
   {
-    name: '04-meadow-skyline',
-    caption: 'Sheep Meadow, with the skyline behind it',
-    at: { x: -50, z: 40, yaw: Math.PI - 0.2, pitch: 0.06 },
+    // The alleys between the walled quarters: red wall, gold coping, and a
+    // three-metre gap. The best close-quarters ground on the map.
+    name: '04-six-palaces',
+    caption: 'The alleys of the Six Eastern Palaces',
+    at: { x: 62, z: -100, yaw: 1.57, pitch: 0.0 },
     settle: 3.0,
   },
   {
-    // From the plaza looking south at the architecture, not from the terrace
-    // looking further south — at z=26 the camera is already past the arcade
-    // and the shot came back as a second, worse photograph of the Mall.
-    name: '05-terrace-arcade',
-    caption: 'The arcade and terrace stair, from the plaza',
-    at: { x: 0, z: 6, yaw: Math.PI, pitch: 0.06 },
+    name: '05-meridian-gate',
+    caption: 'Under the Meridian Gate',
+    at: { x: 0, z: 190, yaw: Math.PI, pitch: 0.16 },
     settle: 3.0,
   },
   {
     // The money shot: a target covered in paint, at fighting range, mid-burst.
     name: '06-firefight',
-    caption: 'Tagging a bot on the meadow',
-    duel: { player: [-50, 39], bot: [-50, 45] },
+    caption: 'Tagging a bot in the great court',
+    duel: { player: [0, 112], bot: [0, 106] },
     settle: 1.2,
     // Fire for a moment so the burst is in the air and the splats have landed.
     burst: 1.1,
   },
   {
-    // Open sunlight on the meadow, not the shaded Mall: the subject is the
-    // paint, and paint in tree shadow reads as a dark patch.
+    // Open courtyard rather than the shade under an eave: the subject is the
+    // paint, and paint in shadow reads as a dark patch.
     name: '07-painted-bot',
     caption: 'Nobody dies. Hits are counters, and paint.',
-    duel: { player: [-46, 40], bot: [-46, 45] },
+    duel: { player: [-20, 112], bot: [-20, 107] },
     settle: 1.0,
     // Painted rather than shot at — see the director's `paintTarget`.
     paint: 16,

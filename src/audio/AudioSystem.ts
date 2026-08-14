@@ -1,5 +1,6 @@
 import { Vector3 } from 'three';
 import type { GameContext, System } from '../core/System';
+import { GOLDEN_RIVER } from '../world/CityLayout';
 import type { PlayerState } from '../gameplay/PlayerState';
 import { AudioEngine } from './AudioEngine';
 import { Synth } from './Synth';
@@ -183,23 +184,28 @@ export class AudioSystem implements System {
   /** Schedules birdsong and the occasional bell. */
   private updateAmbience(ctx: GameContext): void {
     if (ctx.elapsed >= this.nextBirdAt) {
-      // Birds live in the trees, so place calls out at a distance and off to
-      // one side rather than at the listener.
+      // Birds live in the cypresses of the Imperial Garden and on the roofs, so
+      // place calls out at a distance and off to one side rather than at the
+      // listener.
       const pan = ctx.rng.range(-0.9, 0.9);
       const gain = ctx.rng.range(0.18, 0.5);
       this.synth?.birdCall(gain, pan, ctx.rng.range(1600, 3200));
       this.nextBirdAt = ctx.elapsed + ctx.rng.range(1.8, 6.5);
     }
 
-    // The fountain, heard from anywhere on the plaza. Scheduled rather than
-    // looped: a one-shot wash every second or so overlaps into a continuous
-    // bed, and it costs nothing when nobody is near enough to hear it.
+    // The Golden Water River, heard across the outer court. Scheduled rather
+    // than looped: a one-shot wash every second or so overlaps into a
+    // continuous bed, and it costs nothing when nobody is near enough to hear
+    // it. Distance is measured to the *channel*, not to a point, because the
+    // river is 90m of it running the width of the courtyard.
     if (ctx.elapsed >= this.nextWaterAt) {
       const position = this.state.renderPosition;
-      const distance = Math.hypot(position.x, position.z);
-      if (distance < FOUNTAIN_AUDIBLE) {
-        const near = 1 - distance / FOUNTAIN_AUDIBLE;
-        this.playAt(FOUNTAIN_POSITION, (g, p) => this.synth?.water(g * near * 0.5, p));
+      const distance = Math.abs(position.z - GOLDEN_RIVER.centerZ)
+        + Math.max(0, Math.abs(position.x) - GOLDEN_RIVER.halfSpan);
+      if (distance < RIVER_AUDIBLE) {
+        const near = 1 - distance / RIVER_AUDIBLE;
+        RIVER_POSITION.set(position.x, 1.0, GOLDEN_RIVER.centerZ);
+        this.playAt(RIVER_POSITION, (g, p) => this.synth?.water(g * near * 0.5, p));
       }
       this.nextWaterAt = ctx.elapsed + ctx.rng.range(0.8, 1.3);
     }
@@ -240,7 +246,7 @@ export class AudioSystem implements System {
 
 const FORWARD = new Vector3();
 
-/** The Bethesda Fountain stands at the origin, and you can hear it running. */
-const FOUNTAIN_POSITION = new Vector3(0, 1.5, 0);
-/** Beyond this the fountain is inaudible under the wind. */
-const FOUNTAIN_AUDIBLE = 26;
+/** Scratch for the river's nearest point, which moves with the listener. */
+const RIVER_POSITION = new Vector3();
+/** Beyond this the river is inaudible under the wind. */
+const RIVER_AUDIBLE = 34;

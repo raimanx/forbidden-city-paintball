@@ -85,11 +85,20 @@ const sample = (frames) => page.evaluate((n) => new Promise((resolve) => {
   requestAnimationFrame(tick);
 }), frames);
 
+/**
+ * Four vantages, chosen for what they cost rather than for what they look like.
+ *
+ * `great-court` is the worst case the game actually puts a player in: the
+ * largest open courtyard on the map, looking north up the axis with the terrace,
+ * the three great halls and half the Inner Court's roofs in frame at once.
+ * `palace-alley` is the opposite — two walls and a strip of sky — and is what
+ * most of the compound is really like. The other two sit between them.
+ */
 const SPOTS = [
-  { name: 'plaza-fountain', x: 0, z: 10, yaw: 0, pitch: -0.05 },
-  { name: 'mall-allee', x: 0, z: 46, yaw: Math.PI, pitch: -0.02 },
-  { name: 'ramble', x: -40, z: -46, yaw: 1.2, pitch: 0 },
-  { name: 'wide-lake', x: -13, z: -11, yaw: 0.15, pitch: -0.04 },
+  { name: 'great-court', x: 0, z: 110, yaw: 0, pitch: 0.02 },
+  { name: 'axis-south', x: 0, z: 190, yaw: 0, pitch: 0.03 },
+  { name: 'palace-alley', x: 62, z: -100, yaw: Math.PI, pitch: 0 },
+  { name: 'moat-corner', x: 185, z: 240, yaw: 0.85, pitch: 0.02 },
 ];
 
 console.log('\nframe time (ms, lower is better):');

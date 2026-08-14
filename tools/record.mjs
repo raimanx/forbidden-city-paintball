@@ -51,7 +51,7 @@ const DT = 1 / FPS;
 // `drive(u, t)` returns the controls for one frame, where `u` runs 0..1 across
 // the beat and `t` is seconds into it.
 //
-// Landmark coordinates come from src/world/ParkLayout.ts.
+// Landmark coordinates come from src/world/CityLayout.ts and CityPlan.ts.
 
 /** Eased 0..1, for camera moves that shouldn't start or stop abruptly. */
 const ease = (u) => u * u * (3 - 2 * u);
@@ -63,16 +63,17 @@ const sway = (t, amp = 0.05, rate = 0.45) =>
 
 const BEATS = [
   {
-    // Opens on the fountain from the south of the plaza, drifting in and
-    // panning left. The first three seconds decide whether anyone watches the
-    // rest, so this is the postcard: water, ironwork, canopy and lake.
+    // Opens on the great court from its south end, drifting north toward the
+    // terrace. The first three seconds decide whether anyone watches the rest,
+    // so this is the postcard: marble, gold roofs and a courtyard you could
+    // land an aircraft in.
     //
     // The drift is slow on purpose. An earlier cut walked in at full pace and
     // arrived in the basin four seconds early, which turned the establishing
     // shot into a shot of the far shore.
-    name: 'fountain-reveal',
+    name: 'great-court-reveal',
     seconds: 7,
-    at: { x: 0, y: 8, z: 15, yaw: 0.42, pitch: 0.04 },
+    at: { x: 0, y: 8, z: 150, yaw: 0.06, pitch: 0.03 },
     drive: (u, t) => ({
       move: [0, 0.18],
       yaw: lerp(0.42, 0.05, ease(u)),
@@ -87,9 +88,9 @@ const BEATS = [
     // whole frame became the hillside they were standing on. Approaching the
     // arches on the flat keeps the architecture in shot and the camera out of
     // the ground.
-    name: 'arcade-approach',
+    name: 'terrace-approach',
     seconds: 6,
-    at: { x: 0, y: 8, z: 5, yaw: Math.PI, pitch: 0.06 },
+    at: { x: 0, y: 8, z: 96, yaw: 0.0, pitch: 0.05 },
     drive: (u, t) => ({
       move: [Math.sin(t * 0.7) * 0.1, 0.26],
       yaw: Math.PI + lerp(0.12, -0.08, ease(u)) + sway(t, 0.04, 0.5),
@@ -97,7 +98,7 @@ const BEATS = [
     }),
   },
   {
-    // First contact, staged nine metres up the Mall allée.
+    // First contact, staged nine metres up the axis in the great court.
     //
     // Staged rather than "walk at whoever is nearest": the first version of
     // this beat picked up whichever bot happened to be closest to where the
@@ -105,7 +106,7 @@ const BEATS = [
     // the spring arm collapsed into the stonework and the whole frame became
     // the back of the player's head. Fights are placed in the open now, and
     // the allée is the most photogenic open ground on the map.
-    name: 'duel-mall',
+    name: 'duel-great-court',
     seconds: 12,
     stage: { player: [0, 52], bot: [0, 43] },
     hold: 1.2,
@@ -119,7 +120,7 @@ const BEATS = [
   {
     // Bow Bridge, three-quarters on from the west bank. Pure scenery: water,
     // ironwork and the far shore.
-    name: 'bow-bridge',
+    name: 'corner-tower',
     seconds: 7,
     // A pan from a standing start, and deliberately no walking at all.
     //
@@ -129,7 +130,7 @@ const BEATS = [
     // walking far enough puts them under the span and in the lake. Both were
     // tried and both came back unusable. Standing still is what the matching
     // press still does, and that one frames cleanly.
-    at: { x: -58, y: 8, z: -14, yaw: -1.02, pitch: -0.11 },
+    at: { x: 168, y: 8, z: 240, yaw: 0.85, pitch: -0.04 },
     drive: (u, t) => ({
       move: [0, 0],
       yaw: lerp(-1.02, -0.48, ease(u)) + sway(t, 0.025, 0.5),
@@ -137,9 +138,10 @@ const BEATS = [
     }),
   },
   {
-    // Close quarters on Sheep Meadow, strafing hard around the target with the
+    // Close quarters in an alley of the Six Eastern Palaces, strafing hard
+    // around the target with the
     // skyline behind it. This is the shot that has to sell that it is a game.
-    name: 'duel-meadow',
+    name: 'duel-palace-alley',
     seconds: 12,
     stage: { player: [-50, 36], bot: [-50, 44] },
     hold: 1.4,
@@ -152,11 +154,12 @@ const BEATS = [
     }),
   },
   {
-    // Sheep Meadow wide, with the Manhattan skyline behind it — the shot that
+    // The north end of the axis, with Jingshan over the wall behind it — the
+    // shot that
     // says where this is set.
-    name: 'meadow-skyline',
+    name: 'jingshan-over-the-wall',
     seconds: 6,
-    at: { x: -50, y: 8, z: 46, yaw: Math.PI - 0.35, pitch: 0.10 },
+    at: { x: 0, y: 8, z: -60, yaw: Math.PI, pitch: 0.12 },
     drive: (u, t) => ({
       move: [0, 0.8],
       sprint: u > 0.35,
@@ -165,13 +168,13 @@ const BEATS = [
     }),
   },
   {
-    // Sprinting north up the Mall, under the elms. Sprint widens the FOV and
+    // Sprinting north up the axis from the Meridian Gate. Sprint widens the FOV and
     // the tunnel of trees does the rest.
     // Started from the south end: a sprint covers forty metres in six seconds,
     // and from z=66 that ends the shot nose-first against the terrace wall.
-    name: 'mall-sprint',
+    name: 'axis-sprint',
     seconds: 6,
-    at: { x: 0, y: 8, z: 82, yaw: 0, pitch: -0.02 },
+    at: { x: 0, y: 8, z: 190, yaw: 0, pitch: -0.02 },
     drive: (u, t) => ({
       move: [0, 1],
       sprint: true,
@@ -204,9 +207,9 @@ const BEATS = [
   },
   {
     // The lake from the south shore, on the way out.
-    name: 'lake-shore',
+    name: 'golden-water-river',
     seconds: 6,
-    at: { x: -13, y: 8, z: -6, yaw: 0.15, pitch: -0.10 },
+    at: { x: -20, y: 8, z: 186, yaw: 0.22, pitch: -0.06 },
     drive: (u, t) => ({
       move: [0.25, 0.3],
       yaw: lerp(0.15, 0.62, ease(u)) + sway(t, 0.02),

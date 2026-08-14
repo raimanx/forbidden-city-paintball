@@ -48,3 +48,31 @@ wall on a phone. It now sits above the right trigger. An auto-hop was tried in
 its place first; `CLAUDE/NEXT_4.md` records why the button won.
 
 Plan in `CLAUDE/PLAN_4.md`, consequences in `CLAUDE/NEXT_4.md`.
+
+# Iteration 5 — the Forbidden City
+
+Central Park is gone. The map is now the Forbidden City: 802 structures inside
+the moat at their surveyed positions, pulled from OpenStreetMap by
+`tools/fetch-osm.mjs` and generated from their footprints — plinth, red wall,
+painted frieze, bracket course, lattice doors, golden hipped roof. The wall, the
+moat, the great marble terrace, the four corner towers and Jingshan behind the
+north wall are built from `CityLayout`; the vats, lions, rockery and cypresses
+come from Blender in a 78KB prop set.
+
+Plan in `CLAUDE/PLAN_5.md`, dimensions and their sources in
+`CLAUDE/REFERENCE_FC.md`, consequences in `CLAUDE/NEXT_5.md`.
+
+The whole suite passes — 181 checks across eleven files, with the arena tests
+rewritten for this map and `tools/geometry-test.mjs` added after a face-winding
+bug that cost an afternoon and was invisible in every screenshot.
+
+Two things that want a human rather than a machine:
+
+- **Frame rate on a phone.** 73fps worst-case median on a desktop RTX 3060 at
+  1080p, which is inside the budget, but there is no occlusion culling: standing
+  in an alley two metres wide submits as many triangles as standing in the great
+  court. See `CLAUDE/NEXT_5.md` for what to do about it.
+- **A quarter of the compound is sealed.** The enclosed courtyards of the Six
+  Palaces are entered through gates the survey does not carry, so the navgrid
+  prunes them. Every alley and every major court is reachable; the private
+  courtyards inside them are not.

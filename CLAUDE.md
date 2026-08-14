@@ -8,8 +8,14 @@ Forbidden City Paintball — a browser paintball game: Three.js + Rapier3D,
 third-person, single-player against NPC bots. Hand-drawn look — Borderlands
 linework over Ghibli colour and light. Nobody dies; hits are counters.
 
-The arena geometry is still the stylised Central Park the project started from
-(`src/world/Park*.ts`, `Cityscape.ts`); only the game's name has changed so far.
+The arena is the Forbidden City, built from the survey: `tools/fetch-osm.mjs`
+pulls every building, courtyard wall and watercourse inside the moat from
+OpenStreetMap and writes `src/world/CityPlan.ts`, which is 800-odd structures at
+their true positions. `CityLayout.ts` owns the ground and the compression to
+play scale; `CityBuilding.ts` turns a footprint into a building; `CityArena.ts`
+assembles the lot. Central Park is gone.
+
+Reference dimensions, with sources, are in `CLAUDE/REFERENCE_FC.md`.
 
  - `CLAUDE/PROMPT_0.md` is the original brief. 
  - `CLAUDE/PLAN_n.md` is what Claude plan to work on after receiving the prompt or feedback of iteration n
