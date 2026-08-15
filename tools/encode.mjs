@@ -14,11 +14,11 @@
  *   youtube   full length at whatever was recorded, higher bitrate, and a
  *             faster-decoding profile since nobody is scrolling past it.
  *
- * Usage: node tools/encode.mjs [--in DIR] [--only x,youtube]
+ * Usage: node tools/encode.mjs [--in DIR] [--only x,youtube] [--partial]
  */
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync, mkdirSync, rmSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 
 const argv = process.argv.slice(2);
 const opt = (name, fallback) => {
@@ -28,6 +28,8 @@ const opt = (name, fallback) => {
 
 const IN = opt('in', 'captures/video');
 const ONLY = opt('only', null)?.split(',').map((s) => s.trim());
+/** Cut what is there, for checking a single beat shot with `record --only`. */
+const PARTIAL = argv.includes('--partial');
 const FRAMES = join(IN, 'frames');
 const OUT = join(IN, 'out');
 
@@ -56,9 +58,9 @@ const CUTS = [
   {
     name: 'youtube',
     file: 'forbidden-city-paintball-gameplay-youtube.mp4',
-    beats: ['fountain-reveal', 'arcade-approach', 'duel-mall', 'bow-bridge',
-            'duel-meadow', 'meadow-skyline', 'mall-sprint', 'duel-open',
-            'lake-shore', 'results'],
+    beats: ['great-court-reveal', 'gate-approach', 'duel-great-court',
+            'six-palaces-alley', 'duel-walled-quarter', 'inner-court',
+            'axis-sprint', 'duel-open', 'golden-water-river', 'results'],
     crf: 20,
     preset: 'slow',
     extra: ['-profile:v', 'high', '-level', '4.2', '-maxrate', '20M', '-bufsize', '40M'],
@@ -66,8 +68,8 @@ const CUTS = [
   {
     name: 'x',
     file: 'forbidden-city-paintball-gameplay-x.mp4',
-    beats: ['duel-meadow', 'fountain-reveal', 'duel-mall', 'bow-bridge',
-            'duel-open', 'results'],
+    beats: ['duel-walled-quarter', 'great-court-reveal', 'duel-great-court',
+            'six-palaces-alley', 'duel-open', 'results'],
     // X re-encodes everything anyway, so the job here is to hand its
     // transcoder a clean source without handing its *uploader* a file big
     // enough to fail on. The cap matters more than the CRF: this renderer
@@ -81,13 +83,45 @@ const CUTS = [
 
 mkdirSync(OUT, { recursive: true });
 
-const run = (args) => execFileSync(FFMPEG, args, { stdio: ['ignore', 'ignore', 'pipe'] });
+/**
+ * Runs ffmpeg, and on failure reports what it actually said.
+ *
+ * `execFileSync` throws with `stderr` as a raw Buffer, which node prints as
+ * several hundred lines of decimal byte values — the real message ("No such
+ * file or directory", naming the frame) is in there but unreadable. ffmpeg is
+ * also chatty on success, so stderr stays captured rather than inherited; it
+ * is only decoded and shown when the exit code is non-zero.
+ */
+const run = (args) => {
+  try {
+    return execFileSync(FFMPEG, args, { stdio: ['ignore', 'ignore', 'pipe'] });
+  } catch (error) {
+    const stderr = error.stderr ? Buffer.from(error.stderr).toString('utf8') : '';
+    // The last few lines carry the reason; everything above is the banner.
+    const tail = stderr.trimEnd().split('\n').slice(-6).join('\n');
+    throw new Error(`ffmpeg failed (exit ${error.status}):\n${tail}`);
+  }
+};
 
 for (const cut of CUTS) {
   if (ONLY && !ONLY.includes(cut.name)) continue;
 
   const beats = cut.beats.map((name) => byName.get(name)).filter(Boolean);
   const missing = cut.beats.filter((name) => !byName.has(name));
+  // A missing beat is an error, not a note.
+  //
+  // These two lists are written by hand in two files, and when the recorder's
+  // beats were renamed for the Forbidden City this one was not: eight of the
+  // ten names here matched nothing. That printed one grey line and then cut a
+  // perfectly valid eighteen-second film out of the two that survived. A cut
+  // that is quietly missing most of its footage has to stop the run.
+  if (missing.length && !PARTIAL) {
+    throw new Error(
+      `${cut.name}: no recorded frames for ${missing.join(', ')}. ` +
+      `Recorded beats are: ${manifest.beats.map((b) => b.name).join(', ')}. ` +
+      `Pass --partial to cut anyway (for --only runs).`,
+    );
+  }
   if (missing.length) console.log(`  (${cut.name}: no frames for ${missing.join(', ')})`);
   if (!beats.length) { console.log(`  ${cut.name}: nothing to cut, skipping`); continue; }
 
@@ -102,7 +136,11 @@ for (const cut of CUTS) {
   let frames = 0;
   for (const beat of beats) {
     for (let i = 0; i < beat.count; i++) {
-      lines.push(`file '${join(process.cwd(), FRAMES, `${String(beat.first + i).padStart(6, '0')}.jpg`)}'`);
+      // `resolve`, not `join(process.cwd(), ...)`: the concat demuxer needs
+      // absolute paths, but an `--in` that is *already* absolute concatenated
+      // onto the cwd gives a path that exists nowhere, and ffmpeg reports it
+      // as a bare non-zero exit with the frame name buried in a stderr buffer.
+      lines.push(`file '${resolve(FRAMES, `${String(beat.first + i).padStart(6, '0')}.jpg`)}'`);
       lines.push(`duration ${(1 / fps).toFixed(6)}`);
       frames++;
     }

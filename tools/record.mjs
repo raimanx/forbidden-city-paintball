@@ -81,14 +81,15 @@ const BEATS = [
     }),
   },
   {
-    // Walks south off the plaza toward the arcade colonnade.
+    // Walks south down the court toward the Gate of Supreme Harmony: three
+    // archways, a double eave and the bracket course under it.
     //
     // It used to climb the terrace stair. It should not: the stair is a steep
     // slope with the camera three metres behind and below the player, so the
-    // whole frame became the hillside they were standing on. Approaching the
-    // arches on the flat keeps the architecture in shot and the camera out of
+    // whole frame became the marble they were standing on. Approaching the
+    // gate on the flat keeps the architecture in shot and the camera out of
     // the ground.
-    name: 'terrace-approach',
+    name: 'gate-approach',
     seconds: 6,
     at: { x: 0, y: 8, z: 96, yaw: 0.0, pitch: 0.05 },
     drive: (u, t) => ({
@@ -108,7 +109,16 @@ const BEATS = [
     // the allée is the most photogenic open ground on the map.
     name: 'duel-great-court',
     seconds: 12,
-    stage: { player: [0, 52], bot: [0, 43] },
+    // Staged in the open court, not up on the terrace.
+    //
+    // This used to be [0, 52] against [0, 43], which is the top of the marble
+    // terrace — and the terrace is not walkable ground as far as the navgrid
+    // is concerned, so `stage` snapped the bot to the nearest spot that is and
+    // reported a range of 32.8m. The beat then spent twelve seconds with the
+    // player jammed against the terrace wall, firing at masonry, with no
+    // opponent anywhere in frame. Check the staged range in the run log: it
+    // should be within a metre of what the coordinates here ask for.
+    stage: { player: [0, 118], bot: [0, 108] },
     hold: 1.2,
     drive: (u, t) => ({
       move: [Math.sin(t * 0.8) * 0.5, t < 2.5 ? 0.35 : 0],
@@ -118,30 +128,36 @@ const BEATS = [
     }),
   },
   {
-    // Bow Bridge, three-quarters on from the west bank. Pure scenery: water,
-    // ironwork and the far shore.
-    name: 'corner-tower',
-    seconds: 7,
-    // A pan from a standing start, and deliberately no walking at all.
+    // An alley of the Six Eastern Palaces: red wall one side, gold coping over
+    // it, and a three-metre gap to walk down.
     //
-    // The west bank is a narrow shelf between the bridge approach embankment
-    // and the water. Walking forward at any pace puts the player on the ramp
-    // and the camera — three metres behind and below — inside the embankment;
-    // walking far enough puts them under the span and in the lake. Both were
-    // tried and both came back unusable. Standing still is what the matching
-    // press still does, and that one frames cleanly.
-    at: { x: 168, y: 8, z: 240, yaw: 0.85, pitch: -0.04 },
+    // This beat used to be called `corner-tower` and stood at (168, 240) — a
+    // leftover from the park, and a hundred metres outside the compound in
+    // both axes. There is nothing out there but moat and fog: the buildings
+    // fall out of the shading pass at that range and render as bare ink
+    // outlines on a grey field. Anything filmed here has to stand inside the
+    // walls.
+    name: 'six-palaces-alley',
+    seconds: 7,
+    // A pan from a standing mark, with no walking at all.
+    //
+    // The alley runs north-south and this shot faces east across it, so
+    // driving the stick forward walks straight into the wall three metres
+    // away — which is what the first cut of this beat did, and it spent five
+    // of its seven seconds with the frame filled by flat red. The pan is what
+    // shows the gap is a corridor; the feet do not need to move.
+    at: { x: 62, y: 8, z: -100, yaw: 1.57, pitch: 0.0 },
     drive: (u, t) => ({
       move: [0, 0],
-      yaw: lerp(-1.02, -0.48, ease(u)) + sway(t, 0.025, 0.5),
-      pitch: lerp(-0.11, 0.02, ease(u)) + sway(t, 0.015, 0.7),
+      yaw: lerp(1.20, 1.95, ease(u)) + sway(t, 0.02, 0.5),
+      pitch: lerp(0.07, -0.02, ease(u)) + sway(t, 0.015, 0.7),
     }),
   },
   {
-    // Close quarters in an alley of the Six Eastern Palaces, strafing hard
-    // around the target with the
-    // skyline behind it. This is the shot that has to sell that it is a game.
-    name: 'duel-palace-alley',
+    // Close quarters in the walled quarter west of the great court, strafing
+    // hard around the target between the courtyard walls. This is the shot
+    // that has to sell that it is a game.
+    name: 'duel-walled-quarter',
     seconds: 12,
     stage: { player: [-50, 36], bot: [-50, 44] },
     hold: 1.4,
@@ -154,22 +170,29 @@ const BEATS = [
     }),
   },
   {
-    // The north end of the axis, with Jingshan over the wall behind it — the
-    // shot that
-    // says where this is set.
-    name: 'jingshan-over-the-wall',
+    // The inner court at the north end of the axis, and the gate that closes
+    // it.
+    //
+    // The previous position, (0, -60), is on a roof. It is the far north end
+    // of the field, the buildings there are packed tight enough that a drop
+    // from eight metres lands on one, and the beat spent six seconds
+    // sprinting across gold tiles with half the frame filled by a hip ridge.
+    // The courtyard fourteen metres south lands on pavement — but walking
+    // north from it puts the player inside the gate passage within three
+    // seconds, and the camera three metres behind them ends up under the
+    // building looking up through the floor. So this one stands still too.
+    name: 'inner-court',
     seconds: 6,
-    at: { x: 0, y: 8, z: -60, yaw: Math.PI, pitch: 0.12 },
+    at: { x: -3.7, y: 8, z: -46.5, yaw: 0, pitch: 0.04 },
     drive: (u, t) => ({
-      move: [0, 0.8],
-      sprint: u > 0.35,
-      yaw: Math.PI + lerp(-0.35, 0.25, ease(u)),
-      pitch: lerp(0.10, -0.02, ease(u)) + sway(t, 0.02),
+      move: [0, 0],
+      yaw: lerp(-0.34, 0.30, ease(u)) + sway(t, 0.02),
+      pitch: lerp(0.09, -0.01, ease(u)) + sway(t, 0.02),
     }),
   },
   {
-    // Sprinting north up the axis from the Meridian Gate. Sprint widens the FOV and
-    // the tunnel of trees does the rest.
+    // Sprinting north up the axis from the Meridian Gate. Sprint widens the
+    // FOV and the walls closing in on both sides do the rest.
     // Started from the south end: a sprint covers forty metres in six seconds,
     // and from z=66 that ends the shot nose-first against the terrace wall.
     name: 'axis-sprint',
@@ -206,7 +229,8 @@ const BEATS = [
     }),
   },
   {
-    // The lake from the south shore, on the way out.
+    // The Inner Golden Water River and its five marble bridges, from the first
+    // courtyard, on the way out.
     name: 'golden-water-river',
     seconds: 6,
     at: { x: -20, y: 8, z: 186, yaw: 0.22, pitch: -0.06 },
@@ -386,11 +410,6 @@ async function setUpFinale(page) {
     const { game, match, characters, state } = window.__paintball;
     const V = state.position.constructor;
 
-    characters.allCharacters.forEach((character, index) => {
-      character.hitsGiven = [12, 9, 8, 7, 5, 4, 3][index] ?? 4;
-      character.hitsTaken = [3, 5, 6, 6, 8, 9, 11][index] ?? 6;
-    });
-
     for (const bot of characters.allBots) {
       for (let i = 0; i < 7; i++) {
         const angle = i * 0.9;
@@ -409,6 +428,13 @@ async function setUpFinale(page) {
         });
       }
     }
+    // After the paint, not before: every splat above is credited to the player,
+    // so scores set first were overwritten by 12 + 56 and the card went out
+    // claiming 68 tags against a best bot score of nine.
+    characters.allCharacters.forEach((character, index) => {
+      character.hitsGiven = [12, 9, 8, 7, 5, 4, 3][index] ?? 4;
+      character.hitsTaken = [3, 5, 6, 6, 8, 9, 11][index] ?? 6;
+    });
     match.timeLeft = 0.2;
   });
   // Enough simulated time for the whistle, the phase change and the stage to

@@ -60,30 +60,45 @@ const SHOTS = [
     settle: 3.0,
   },
   {
-    name: '03-on-the-terrace',
-    caption: 'On the marble terrace, under the great hall',
-    at: { x: -0.8, z: 28.2, yaw: Math.PI, pitch: 0.02 },
+    // Low on the stair, looking up the marble at the hall standing over it.
+    // The only shot in the set with any elevation in it, and the one that
+    // shows the terrace is high ground rather than a step.
+    name: '03-great-stair',
+    caption: 'The stair up to the Hall of Supreme Harmony',
+    at: { x: 0, z: 74, yaw: 0, pitch: 0.10 },
+    settle: 3.0,
+  },
+  {
+    // Standing *on* the terrace, looking back south over the outer court.
+    //
+    // It used to stand at z=28 facing north, which is a metre from the back
+    // wall of the great hall: the frame was two thirds flat maroon. The hall
+    // is not photographable from its own doorstep — the shot that sells the
+    // terrace is the one looking off it, over every roof in the outer court.
+    name: '04-on-the-terrace',
+    caption: 'On the marble terrace, over the roofs of the outer court',
+    at: { x: 0, z: 55, yaw: Math.PI, pitch: 0.02 },
     settle: 3.0,
   },
   {
     // The alleys between the walled quarters: red wall, gold coping, and a
     // three-metre gap. The best close-quarters ground on the map.
-    name: '04-six-palaces',
+    name: '05-six-palaces',
     caption: 'The alleys of the Six Eastern Palaces',
     at: { x: 62, z: -100, yaw: 1.57, pitch: 0.0 },
     settle: 3.0,
   },
   {
-    name: '05-meridian-gate',
+    name: '06-meridian-gate',
     caption: 'Under the Meridian Gate',
     at: { x: 0, z: 190, yaw: Math.PI, pitch: 0.16 },
     settle: 3.0,
   },
   {
     // The money shot: a target covered in paint, at fighting range, mid-burst.
-    name: '06-firefight',
+    name: '07-firefight',
     caption: 'Tagging a bot in the great court',
-    duel: { player: [0, 112], bot: [0, 106] },
+    duel: { player: [0, 112], bot: [0, 107] },
     settle: 1.2,
     // Fire for a moment so the burst is in the air and the splats have landed.
     burst: 1.1,
@@ -91,9 +106,12 @@ const SHOTS = [
   {
     // Open courtyard rather than the shade under an eave: the subject is the
     // paint, and paint in shadow reads as a dark patch.
-    name: '07-painted-bot',
+    name: '08-painted-bot',
     caption: 'Nobody dies. Hits are counters, and paint.',
-    duel: { player: [-20, 112], bot: [-20, 107] },
+    // Closer than the firefight shot. The subject is the splats on the body,
+    // and the aimed camera sits 2.2m behind the player's own shoulder — at six
+    // metres the target is a third the size of the head in front of it.
+    duel: { player: [-20, 112], bot: [-20, 108] },
     settle: 1.0,
     // Painted rather than shot at — see the director's `paintTarget`.
     paint: 16,
@@ -102,7 +120,7 @@ const SHOTS = [
     after: 0.9,
   },
   {
-    name: '08-results',
+    name: '09-results',
     caption: 'End of round',
     finale: true,
   },
@@ -205,10 +223,6 @@ async function finale(page) {
   await page.evaluate(() => {
     const { game, match, characters, state } = window.__paintball;
     const V = state.position.constructor;
-    characters.allCharacters.forEach((character, index) => {
-      character.hitsGiven = [12, 9, 8, 7, 5, 4, 3][index] ?? 4;
-      character.hitsTaken = [3, 5, 6, 6, 8, 9, 11][index] ?? 6;
-    });
     for (const bot of characters.allBots) {
       for (let i = 0; i < 7; i++) {
         const angle = i * 0.9;
@@ -225,6 +239,16 @@ async function finale(page) {
         });
       }
     }
+    // Scores go on *after* the paint, not before.
+    //
+    // Every splat above is emitted with `shooterId: 'player'`, and the match
+    // credits each one — dressing the line-up first meant the seven-a-side
+    // table was immediately overwritten by 12 + 56, and the end card went out
+    // reading "you — 68 tagged" against a best bot score of nine.
+    characters.allCharacters.forEach((character, index) => {
+      character.hitsGiven = [12, 9, 8, 7, 5, 4, 3][index] ?? 4;
+      character.hitsTaken = [3, 5, 6, 6, 8, 9, 11][index] ?? 6;
+    });
     match.timeLeft = 0.2;
   });
   await page.evaluate(() => window.__director.frame({ move: [0, 0] }, 1.0));
